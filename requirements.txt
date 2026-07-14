@@ -1,0 +1,5 @@
+Pillow>=10.0.0
+pillow-heif>=0.13.0
+pytesseract>=0.3.10
+anthropic>=0.40.0
+pyinstaller>=6.11.0
