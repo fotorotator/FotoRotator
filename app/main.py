@@ -73,6 +73,39 @@ def try_extract_ids(image, use_ocr: bool, use_claude_api: bool, log_lines: list)
     return found
 
 
+def setup_ocr() -> bool:
+    """Over Tesseract; ak chyba (cely alebo len nemcina), ponukni automaticku
+    instalaciu. Vrati True, ked je OCR pripravene."""
+    status = tesseract_check.diagnose()
+    if status == "ok":
+        return True
+
+    from . import tesseract_install
+
+    if status == "missing":
+        answer = input(
+            "Tesseract OCR nie je nainstalovany. Chces ho teraz automaticky "
+            "stiahnut a nainstalovat (aj s nemcinou)? [A/n]: "
+        )
+        if answer.strip().lower() in ("", "a", "ano", "y", "yes"):
+            try:
+                tesseract_install.install_full()
+            except Exception as exc:
+                print(f"Automaticka instalacia zlyhala: {exc}")
+    else:  # no_deu
+        answer = input(
+            "Tesseractu chyba nemecky jazykovy balik. Chces ho teraz "
+            "automaticky stiahnut a doplnit? [A/n]: "
+        )
+        if answer.strip().lower() in ("", "a", "ano", "y", "yes"):
+            try:
+                tesseract_install.install_german_only(tesseract_check.find_tesseract_cmd())
+            except Exception as exc:
+                print(f"Stiahnutie jazykoveho balika zlyhalo: {exc}")
+
+    return tesseract_check.ensure_tesseract()
+
+
 def main():
     args = parse_args()
 
@@ -84,10 +117,10 @@ def main():
         print(f"Priecinok '{folder}' neexistuje.")
         sys.exit(1)
 
-    has_tesseract = tesseract_check.ensure_tesseract()
+    has_tesseract = setup_ocr()
     if not has_tesseract:
         answer = input(
-            "Pokracovat aj bez OCR? Fotky sa oriented iba podla EXIF a ID cisla "
+            "Pokracovat aj bez OCR? Fotky sa otocia iba podla EXIF a ID cisla "
             "sa nevytiahnu. [a/N]: "
         )
         if answer.strip().lower() not in ("a", "ano", "y", "yes"):

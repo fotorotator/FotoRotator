@@ -8,13 +8,15 @@ a z prvej fotky (štítok meracieho prístroja) vytiahne **Seriennr.** a
 ## Inštalácia (pre bežného používateľa)
 
 1. Stiahni najnovší `FotoRotator.exe` zo sekcie [Releases](../../releases)
-2. Nainštaluj **Tesseract OCR** (potrebný na rozpoznanie správneho smeru
-   otočenia a na čítanie štítku):
-   - stiahni inštalátor z [UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki)
-   - pri inštalácii zaškrtni aj jazykový balík **German (deu)**
-   - over v príkazovom riadku: `tesseract --version`
-3. Spusti `FotoRotator.exe` — buď mu daj cestu k priečinku ako argument,
+2. Spusti `FotoRotator.exe` — buď mu daj cestu k priečinku ako argument,
    alebo (bez argumentu) sa otvorí okno na výber priečinka
+3. Ak na počítači chýba **Tesseract OCR** (potrebný na rozpoznanie správneho
+   smeru otočenia a čítanie štítku), program ho pri prvom spustení **sám
+   ponúkne stiahnuť a nainštalovať** — vždy aktuálnu verziu, automaticky aj
+   s nemeckým jazykovým balíkom. Stačí potvrdiť a povoliť inštaláciu v okne
+   Windows (UAC). Ručná inštalácia je tiež možná: inštalátor z
+   [UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki),
+   pri inštalácii zaškrtnúť jazyk **German (deu)**.
 4. Program otočí fotky, vytvorí nový podpriečinok `otocene_<dátum_čas>/` a na
    konci zobrazí Seriennr./Zählernr. v konzole aj v okienku (dá sa hneď
    skopírovať)
@@ -73,6 +75,7 @@ app/
   rotate.py            — triedenie podľa času, EXIF/OCR otáčanie do landscape
   id_extract.py        — vytiahnutie Seriennr./Zählernr. (OCR + voliteľne Claude API)
   tesseract_check.py   — overenie inštalácie Tesseractu + návod na doinštalovanie
+  tesseract_install.py — automatické stiahnutie a tichá inštalácia Tesseractu + nemčiny
 run.py                 — vstupný skript pre PyInstaller
 build_exe.bat          — zabalenie do .exe
 requirements.txt

@@ -38,7 +38,12 @@ FotoRotator/
     main.py              — vstupný bod, orchestrácia celého behu
     rotate.py            — triedenie fotiek podľa času, EXIF/OCR rotácia
     id_extract.py        — extrakcia Seriennr./Zählernr. (regex + Claude fallback)
-    tesseract_check.py   — kontrola inštalácie Tesseractu, návod na doinštalovanie
+    tesseract_check.py   — kontrola inštalácie Tesseractu (diagnose: ok/missing/no_deu)
+    tesseract_install.py — automatická tichá inštalácia Tesseractu + deu.traineddata
+                           (najnovší inštalátor sa hľadá cez GitHub API releasov
+                           tesseract-ocr/tesseract aj UB-Mannheim/tesseract; nemčina
+                           sa sťahuje zvlášť z tessdata_fast, lebo tichá inštalácia
+                           /S jazykové balíky nepridáva)
   run.py                 — vstupný skript pre PyInstaller
   build_exe.bat
   requirements.txt
