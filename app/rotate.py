@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -67,30 +68,71 @@ def sort_photos(paths: list[Path]) -> list[tuple[Path, datetime, bool]]:
     return items
 
 
-def _score_rotation(image: Image.Image, clockwise_angle: int) -> float:
+def ocr_friendly(image: Image.Image) -> Image.Image:
+    """Kopia fotky pripravena pre OCR. Fotky displejov maju moire vzor (jemna
+    mriezka pixelov obrazovky), na ktorom Tesseract uplne zlyhava - text
+    nevidi vobec. JPEG kompresia s kvalitou 75 tento vzor vyhladi; overene na
+    realnych fotkach z merania (bez toho skore 0, s tym stovky bodov).
+    Gaussovske rozmazanie prekvapivo nepomaha - funguje prave JPEG."""
+    buffer = io.BytesIO()
+    image.convert("RGB").save(buffer, format="JPEG", quality=75)
+    buffer.seek(0)
+    smoothed = Image.open(buffer)
+    smoothed.load()
+    return smoothed
+
+
+def _score_rotation(image: Image.Image, clockwise_angle: int) -> int:
+    """Sucet spolahlivosti rozpoznanych slov (nad prah). Sucet - nie priemer -
+    aby vela citatelneho textu vzdy prebilo par nahodnych 'slov' na fotke
+    otocenej zle. Skoruje sa na plnom rozliseni: zmensenie nici drobny/sikmy
+    text a skore potom vychadza nulove aj pri spravnej rotacii."""
     rotated = image if clockwise_angle == 0 else image.rotate(-clockwise_angle, expand=True)
     try:
         data = pytesseract.image_to_data(rotated, lang="deu+eng", output_type=Output.DICT)
     except Exception:
-        return 0.0
-    confidences = [int(c) for c in data.get("conf", []) if str(c) not in ("-1",)]
-    confidences = [c for c in confidences if c > 0]
-    if not confidences:
-        return 0.0
-    return sum(confidences) / len(confidences)
+        return 0
+    total = 0
+    for conf, word in zip(data.get("conf", []), data.get("text", [])):
+        try:
+            c = int(float(conf))
+        except (TypeError, ValueError):
+            continue
+        if c > 40 and word.strip():
+            total += c - 40
+    return total
 
 
-def determine_extra_rotation(image: Image.Image) -> tuple[int, bool]:
-    """Fotka je po EXIF transpozicii na vysku (treba ju otocit do landscape).
-    Vyskusa otocenie o 90 a 270 stupnov v smere hodinovych ruciciek a cez OCR
-    spolahlivost textu vyberie tu spravnu. Vrati (uhol, neisté)."""
-    score_90 = _score_rotation(image, 90)
-    score_270 = _score_rotation(image, 270)
+def _osd_rotation(image: Image.Image):
+    """Tesseract OSD (Orientation and Script Detection) - vrati uhol v smere
+    hodinovych ruciciek, o ktory treba fotku otocit, alebo None ak sa neda
+    urcit (malo textu)."""
+    try:
+        osd = pytesseract.image_to_osd(image, output_type=Output.DICT)
+        return int(osd.get("rotate", 0)) % 360
+    except Exception:
+        return None
 
-    if score_90 == 0.0 and score_270 == 0.0:
-        return 270, True  # ziaden citatelny text - neisty odhad, treba skontrolovat rucne
 
-    return (90, False) if score_90 >= score_270 else (270, False)
+def detect_rotation(image: Image.Image, candidates: tuple, default: int) -> tuple[int, bool]:
+    """Vyberie spravny uhol otocenia z dvoch kandidatov (pre fotku na sirku
+    0/180, pre fotku na vysku 90/270). Primarne plati OSD - na realnych
+    fotkach z merania (displeje pristrojov, sedemsegmentove cislice) bolo OSD
+    spravne v kazdom overenom pripade, zatial co OCR skorovanie sa na
+    cifernikoch obcas pomylilo (cislice su citatelne aj hore nohami). OCR
+    skorovanie je zaloha, ked OSD zlyha alebo vrati uhol mimo kandidatov
+    (napr. malo textu na fotke). Vrati (uhol, neista)."""
+    image = ocr_friendly(image)
+
+    osd_angle = _osd_rotation(image)
+    if osd_angle in candidates:
+        return osd_angle, False
+
+    scores = {angle: _score_rotation(image, angle) for angle in candidates}
+    first, second = candidates
+    if scores[first] == scores[second]:  # remiza (typicky 0:0 - ziaden text)
+        return default, True
+    return (first if scores[first] > scores[second] else second), False
 
 
 @dataclass
@@ -102,19 +144,23 @@ class ProcessedPhoto:
 
 
 def process_photo(path: Path, use_ocr: bool) -> ProcessedPhoto:
-    """Nacita fotku, aplikuje EXIF orientaciu a - ak treba - doplni otocenie
-    do landscape (cez OCR, ak je k dispozicii)."""
+    """Nacita fotku, aplikuje EXIF orientaciu a cez OCR overi/doplni otocenie:
+    fotka na vysku sa otoci do landscape (90 alebo 270), fotka na sirku sa
+    skontroluje, ci nie je hore nohami (0 alebo 180)."""
     image = Image.open(path)
     image = ImageOps.exif_transpose(image)
 
-    if image.width >= image.height:
-        return ProcessedPhoto(image, 0, False, False)
+    is_landscape = image.width >= image.height
 
     if not use_ocr:
-        return ProcessedPhoto(image, 0, True, False)
+        # Bez OCR sa neda zistit smer - na sirku nechavame (moze byt hore
+        # nohami), na vysku oznacime ako neiste.
+        return ProcessedPhoto(image, 0, not is_landscape, False)
 
-    angle, uncertain = determine_extra_rotation(image)
-    rotated = image.rotate(-angle, expand=True)
+    candidates = (0, 180) if is_landscape else (90, 270)
+    default = 0 if is_landscape else 270
+    angle, uncertain = detect_rotation(image, candidates, default)
+    rotated = image if angle == 0 else image.rotate(-angle, expand=True)
     return ProcessedPhoto(rotated, angle, uncertain, True)
 
 
@@ -128,5 +174,7 @@ def output_name_for(index: int, source_path: Path) -> str:
 def save_output(image: Image.Image, source_path: Path, dest_path: Path):
     if source_path.suffix.lower() in _CONVERT_TO_JPEG:
         image.convert("RGB").save(dest_path, format="JPEG", quality=95)
+    elif source_path.suffix.lower() in (".jpg", ".jpeg"):
+        image.save(dest_path, quality=95)
     else:
         image.save(dest_path)

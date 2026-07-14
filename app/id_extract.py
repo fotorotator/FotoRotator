@@ -16,11 +16,15 @@ IDS = ("Seriennr", "Zaehlernr")
 # "Zaehler-Nr", "Zähler-Nr", "Zahlernr" a pod.
 _SERIEN_LABEL = re.compile(r"Serien\s*-?\s*Nr\.?|Ser\.?\s*-?\s*Nr\.?", re.IGNORECASE)
 _ZAEHLER_LABEL = re.compile(r"Z(?:ähler|ahler|aehler)\s*-?\s*Nr\.?", re.IGNORECASE)
-_VALUE = re.compile(r"[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-/]*)")
+# Hodnota moze obsahovat viac slov oddelenych JEDNOU medzerou (napr. cislo
+# elektromera "1 EBZ03 0003 2874"). Dve a viac medzier znamena iny stlpec
+# stitku - tam hodnota konci. OCR sa pusta s preserve_interword_spaces=1,
+# aby velke medzery medzi stlpcami ostali zachovane.
+_VALUE = re.compile(r"[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-/]*(?: [A-Za-z0-9][A-Za-z0-9\-/]*)*)")
 
 
 def _value_after(line: str, label_match: re.Match) -> str | None:
-    remainder = line[label_match.end():label_match.end() + 40]
+    remainder = line[label_match.end():label_match.end() + 60]
     value_match = _VALUE.match(remainder.lstrip())
     return value_match.group(1) if value_match else None
 
@@ -40,7 +44,11 @@ def extract_ids_from_text(text: str) -> dict:
 
 
 def extract_ids_via_tesseract(image: Image.Image) -> dict:
-    text = pytesseract.image_to_string(image, lang="deu+eng")
+    from .rotate import ocr_friendly
+
+    text = pytesseract.image_to_string(
+        ocr_friendly(image), lang="deu+eng", config="-c preserve_interword_spaces=1"
+    )
     return extract_ids_from_text(text)
 
 
