@@ -39,14 +39,23 @@ Originálne fotky sa nikdy nemenia ani nemažú — program z nich iba číta.
    `Zählernr.:` (tolerantne aj na drobné OCR chyby) a zapíše ich do
    `identifikacne_cisla.txt`
 
-### Voliteľný záložný režim: Claude API
+### Voliteľný režim: Claude API (vision)
 
-Ak lokálny OCR nevie spoľahlivo prečítať štítok (odlesky, uhol fotenia), dá sa
-zapnúť prepínačom `--use-claude-api` — použije sa **výhradne** na fotku so
-štítkom (nie na všetky fotky). Vyžaduje premennú prostredia
-`ANTHROPIC_API_KEY` (získaš na
+Prepínač `--use-claude-api` pošle každú fotku (zmenšenú) aj na Claude API,
+ktoré zvládne to, čo lokálny OCR nie:
+
+- **overí správnosť otočenia** — fotka sa porovná so svojou 180° otočenou
+  verziou a AI vyberie tú správnu; rieši to napr. elektromery s naopak
+  nalepenými kontrolnými nálepkami, ktoré oklamú lokálnu detekciu
+- **prečíta stav elektromera** zo sedemsegmentového LCD displeja (napr.
+  `02854.4 kWh` pri kóde 1.8.0) — zapíše sa do `identifikacne_cisla.txt`
+  k Seriennr./Zählernr.
+- **zálohuje čítanie štítku** (Seriennr./Zählernr.), keby lokálny OCR zlyhal
+
+Vyžaduje premennú prostredia `ANTHROPIC_API_KEY` (získaš na
 [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)).
-Hlavný režim ostáva vždy lokálny Tesseract — appka funguje aj úplne offline.
+Cena je rádovo centy za celú dávku fotiek. Hlavný režim ostáva vždy lokálny
+Tesseract — appka funguje aj úplne offline (bez stavu elektromera).
 
 ```
 FotoRotator.exe "C:\cesta\k\fotkam" --use-claude-api
@@ -73,7 +82,8 @@ Vytvorí `dist/FotoRotator.exe` a kontrolný súčet `dist/FotoRotator.exe.sha25
 app/
   main.py              — vstupný bod, spracovanie priečinka, GUI dialógy
   rotate.py            — triedenie podľa času, EXIF/OCR otáčanie do landscape
-  id_extract.py        — vytiahnutie Seriennr./Zählernr. (OCR + voliteľne Claude API)
+  id_extract.py        — vytiahnutie Seriennr./Zählernr. (lokálny OCR)
+  claude_check.py      — voliteľná kontrola cez Claude API (orientácia, stav elektromera)
   tesseract_check.py   — overenie inštalácie Tesseractu + návod na doinštalovanie
   tesseract_install.py — automatické stiahnutie a tichá inštalácia Tesseractu + nemčiny
 run.py                 — vstupný skript pre PyInstaller

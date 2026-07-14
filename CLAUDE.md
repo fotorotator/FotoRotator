@@ -37,7 +37,14 @@ FotoRotator/
   app/
     main.py              — vstupný bod, orchestrácia celého behu
     rotate.py            — triedenie fotiek podľa času, EXIF/OCR rotácia
-    id_extract.py        — extrakcia Seriennr./Zählernr. (regex + Claude fallback)
+    id_extract.py        — extrakcia Seriennr./Zählernr. (lokálny OCR + regexy)
+    claude_check.py      — voliteľný API režim (--use-claude-api): každá fotka sa
+                           pošle na Claude vision v DVOCH orientáciách (A + B=180°)
+                           a AI vyberie správnu — jedna fotka sama nestačí, model
+                           (aj lokálne OSD) oklamú naopak nalepené nálepky na
+                           elektromeroch; navyše prečíta stav elektromera zo
+                           sedemsegmentového LCD (lokálny Tesseract ho neprečíta,
+                           testované aj so ssd/lets traineddata — samý šum)
     tesseract_check.py   — kontrola inštalácie Tesseractu (diagnose: ok/missing/no_deu)
     tesseract_install.py — automatická tichá inštalácia Tesseractu + deu.traineddata
                            (najnovší inštalátor sa hľadá cez GitHub API releasov

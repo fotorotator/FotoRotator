@@ -42,7 +42,12 @@ def parse_args():
     parser.add_argument(
         "--use-claude-api",
         action="store_true",
-        help="Pouzi Claude API (vision) ako zalozny sposob citania stitku, ak lokalny OCR zlyha.",
+        help=(
+            "Posli kazdu fotku aj na Claude API (vision): overi spravnost otocenia "
+            "(napr. elektromery s naopak nalepenymi nalepkami), precita stav "
+            "elektromera z LCD displeja a zalohuje citanie stitku. Vyzaduje "
+            "ANTHROPIC_API_KEY."
+        ),
     )
     return parser.parse_args()
 
@@ -59,18 +64,8 @@ def make_output_dir(folder: Path) -> Path:
     return candidate
 
 
-def try_extract_ids(image, use_ocr: bool, use_claude_api: bool, log_lines: list) -> dict:
-    found = id_extract.extract_ids_via_tesseract(image) if use_ocr else {key: None for key in id_extract.IDS}
-    missing = [key for key in id_extract.IDS if not found.get(key)]
-    if use_claude_api and missing:
-        try:
-            claude_found = id_extract.extract_ids_via_claude(image)
-            for key in missing:
-                if claude_found.get(key):
-                    found[key] = claude_found[key]
-        except Exception as exc:
-            log_lines.append(f"  Claude API zlyhalo pri citani stitku: {exc}")
-    return found
+def try_extract_ids(image, use_ocr: bool) -> dict:
+    return id_extract.extract_ids_via_tesseract(image) if use_ocr else {key: None for key in id_extract.IDS}
 
 
 def setup_ocr() -> bool:
@@ -139,21 +134,48 @@ def main():
     log_lines = []
     ids = {key: None for key in id_extract.IDS}
     ids_source_file = None
+    meter_reading = None
+    meter_source_file = None
 
     for index, (path, capture_time, used_exif) in enumerate(sorted_photos, start=1):
         output_name = rotate.output_name_for(index, path)
         try:
             processed = rotate.process_photo(path, use_ocr=has_tesseract)
-            rotate.save_output(processed.image, path, output_dir / output_name)
+            rotation_applied = processed.rotation_applied
+            rotation_uncertain = processed.rotation_uncertain
+            image = processed.image
+            api_note = ""
+
+            if args.use_claude_api:
+                from . import claude_check
+
+                try:
+                    result = claude_check.analyze_photo(image)
+                    if result["rotate"]:
+                        image = image.rotate(-result["rotate"], expand=True)
+                        rotation_applied = (rotation_applied + result["rotate"]) % 360
+                        rotation_uncertain = False
+                        api_note = f", otocenie opravene Claude API (+{result['rotate']})"
+                    if meter_reading is None and result["reading"]:
+                        meter_reading = result["reading"]
+                        meter_source_file = output_name
+                    for key in id_extract.IDS:
+                        if ids[key] is None and result.get(key):
+                            ids[key] = result[key]
+                            ids_source_file = output_name
+                except Exception as exc:
+                    log_lines.append(f"  Claude API zlyhalo pri fotke {output_name}: {exc}")
+
+            rotate.save_output(image, path, output_dir / output_name)
 
             time_source = "EXIF" if used_exif else "datum zmeny suboru"
-            status = f"otocena o {processed.rotation_applied} stupnov" if processed.rotation_applied else "bez zmeny (uz vodorovna)"
-            if processed.rotation_uncertain:
+            status = f"otocena o {rotation_applied} stupnov" if rotation_applied else "bez zmeny (uz vodorovna)"
+            if rotation_uncertain:
                 status += " - NEISTA ROTACIA, skontroluj rucne"
-            log_lines.append(f"{output_name}: cas={capture_time} ({time_source}), {status}")
+            log_lines.append(f"{output_name}: cas={capture_time} ({time_source}), {status}{api_note}")
 
             if any(ids[key] is None for key in id_extract.IDS) and index <= MAX_LABEL_ATTEMPTS:
-                found = try_extract_ids(processed.image, has_tesseract, args.use_claude_api, log_lines)
+                found = try_extract_ids(image, has_tesseract)
                 for key in id_extract.IDS:
                     if ids[key] is None and found.get(key):
                         ids[key] = found[key]
@@ -163,6 +185,11 @@ def main():
             log_lines.append(f"{path.name}: CHYBA pri spracovani - {exc} (fotka preskocena)")
 
     ids_lines = [f"{DISPLAY_LABELS[key]}: {ids[key] or 'NENAJDENE'}" for key in id_extract.IDS]
+    if meter_reading is not None:
+        reading_text = meter_reading if "kwh" in meter_reading.lower() else f"{meter_reading} kWh"
+        ids_lines.append(f"Stav elektromera (1.8.0): {reading_text}")
+        if meter_source_file:
+            ids_lines.append(f"(stav precitany z fotky: {meter_source_file})")
     if ids_source_file:
         ids_lines.append(f"(najdene na fotke: {ids_source_file})")
     else:
