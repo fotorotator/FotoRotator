@@ -38,10 +38,18 @@ FotoRotator/
     main.py              — vstupný bod: installer.ensure_installed() (auto-presun do
                            Dokumentov + skratka), potom spúšťa okno programu (gui.py)
     installer.py         — pri zabalenom .exe mimo Dokumenty\FotoRotator sa program
-                           skopíruje tam, vytvorí skratku na Plochu (PowerShell +
+                           skopíruje/aktualizuje tam (porovnanie cez sha256 -
+                           _files_identical), vytvorí skratku na Plochu (PowerShell +
                            WScript.Shell COM), znova sa spustí odtiaľ a pôvodný
-                           proces sa ukončí; ak je cieľ uzamknutý (uz beží), potichu
-                           pokračuje zo súčasnej kópie
+                           proces sa ukončí. KĽÚČOVÉ: cieľový .exe môže byť prave
+                           spustený (stará verzia beží na pozadí/v lište) - priamy
+                           zápis vtedy zlyhá, preto _replace_possibly_running_exe
+                           najprv PREMENUJE stary súbor nabok (.exe.old - to Windows
+                           dovolí aj pri bežiacom procese) a az potom skopíruje novy
+                           na jeho miesto; skratka tak vždy spustí najnovšiu verziu,
+                           aj ked stará instancia dobehne neskôr. Zvyškový .old (ak sa
+                           nedal hned zmazat, lebo ho stará instancia este drzala) sa
+                           potichu uprace pri buducom spusteni.
     icon.py              — ikona programu kreslená cez Pillow (draw_icon/save_ico),
                            zdieľaná pre .ico (assets/icon.ico, --icon pri buildu),
                            okno (iconbitmap) aj tray ikonu

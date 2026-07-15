@@ -28,7 +28,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 API_KEYS_URL = "https://console.anthropic.com/settings/keys"
-APP_VERSION = "0.4.5"
+APP_VERSION = "0.4.6"
 
 # Ponuka modelov pre AI kontrolu - poznamka pri kazdom hovori o cene/kvalite
 # (ceny za milion tokenov vstup/vystup, k 7/2026). Haiku 4.5 je default -
