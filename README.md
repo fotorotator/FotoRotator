@@ -70,9 +70,16 @@ zvládne to, čo lokálny OCR nie:
   k Seriennr./Zählernr.
 - **zálohuje čítanie štítku** (Seriennr./Zählernr.), keby lokálny OCR zlyhal
 
-Cena je rádovo centy za celú dávku fotiek. Bez kľúča program funguje úplne
-offline (lokálny Tesseract) — ale tmavé fotky displejov zblízka môžu ostať
-zle otočené a stav elektromera sa neprečíta.
+Cena je rádovo centy za celú dávku fotiek (Claude Haiku 4.5 — najlacnejší
+model s podporou obrázkov). Program priebežne sleduje minutú sumu:
+- po každom behu sa cena zapíše do `identifikacne_cisla.txt` (a `prehlad.txt`
+  pri viacerých priečinkoch),
+- v okne programu vidno pri API kľúči aj **celkovú sumu minutú doteraz**
+  (ukladá sa lokálne, sčítava sa naprieč všetkými behmi).
+
+Bez kľúča program funguje úplne offline (lokálny Tesseract) — ale tmavé
+fotky displejov zblízka môžu ostať zle otočené a stav elektromera sa
+neprečíta.
 
 ## Vývoj / spustenie zo zdrojového kódu
 

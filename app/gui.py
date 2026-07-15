@@ -27,6 +27,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 API_KEYS_URL = "https://console.anthropic.com/settings/keys"
+APP_VERSION = "0.4.2"
 
 
 def _make_tray_image() -> Image.Image:
@@ -44,7 +45,7 @@ def _make_tray_image() -> Image.Image:
 class App(ctk.CTk):
     def __init__(self, initial_folder: Path | None = None, auto_start: bool = False):
         super().__init__()
-        self.title("FotoRotator")
+        self.title(f"FotoRotator v{APP_VERSION}")
         self.geometry("760x680")
         self.minsize(660, 580)
 
@@ -52,7 +53,9 @@ class App(ctk.CTk):
         self.worker: threading.Thread | None = None
         self.cancel_event = threading.Event()
         self.output_root: Path | None = None
-        self.saved_api_key = config.load().get("api_key", "")
+        saved_config = config.load()
+        self.saved_api_key = saved_config["api_key"]
+        self.total_cost_usd = saved_config["total_cost_usd"]
 
         pad = {"padx": 12, "pady": (6, 0)}
 
@@ -93,7 +96,10 @@ class App(ctk.CTk):
         self.ai_checkbox.pack(side="left", padx=12)
         self.api_status = ctk.CTkLabel(bottom_row, text="", text_color="gray70")
         self.api_status.pack(side="right", padx=12)
+        self.cost_label = ctk.CTkLabel(bottom_row, text="", text_color="gray70")
+        self.cost_label.pack(side="right", padx=(12, 0))
         self._refresh_api_status()
+        self._refresh_cost_label()
 
         # --- Spustit / Zastavit ---
         run_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -151,6 +157,9 @@ class App(ctk.CTk):
         else:
             self.api_status.configure(text="bez kľúča — offline režim", text_color="gray70")
             self.ai_var.set(False)
+
+    def _refresh_cost_label(self):
+        self.cost_label.configure(text=f"minuté doteraz: ${self.total_cost_usd:.4f}")
 
     def _set_running(self, running: bool):
         state = "disabled" if running else "normal"
@@ -340,6 +349,8 @@ class App(ctk.CTk):
                 self.queue.put(("progress", done, total, message))
 
             result = pipeline.run_job(folder, use_ocr, use_api, progress, self.cancel_event)
+            if result.get("cost_usd"):
+                result["lifetime_cost_usd"] = config.add_total_cost_usd(result["cost_usd"])
             self.queue.put(("done", result))
         except Exception as exc:
             self.queue.put(("error", str(exc)))
@@ -368,6 +379,9 @@ class App(ctk.CTk):
                     self.status_label.configure(
                         text="Zastavené používateľom." if was_cancelled else "Hotovo!"
                     )
+                    if "lifetime_cost_usd" in result:
+                        self.total_cost_usd = result["lifetime_cost_usd"]
+                        self._refresh_cost_label()
                     self.log("\n===== VÝSLEDOK =====")
                     self.log(result["summary"])
                     self.log(f"\nVýstup: {self.output_root}")

@@ -22,6 +22,25 @@ from PIL import Image
 DEFAULT_MODEL = "claude-haiku-4-5"  # najlacnejsi model s vision - overene na realnych fotkach, presne ako Sonnet 5
 MAX_IMAGE_SIDE = 1568  # odporucane maximum pre Claude vision, staci aj na LCD
 
+# USD za 1 milion tokenov (vstup, vystup). Iba pre modely, ktore tento program
+# realne pouziva - ak sa DEFAULT_MODEL zmeni na nieco tu nechybajuce,
+# odhad ceny sa jednoducho vynecha (None) namiesto vymyslania cisla.
+PRICING_PER_MILLION_TOKENS = {
+    "claude-haiku-4-5": {"input": 1.00, "output": 5.00},
+    "claude-sonnet-5": {"input": 2.00, "output": 10.00},
+    "claude-opus-4-8": {"input": 5.00, "output": 25.00},
+    "claude-fable-5": {"input": 10.00, "output": 50.00},
+}
+
+
+def _estimate_cost_usd(model: str, usage) -> float | None:
+    prices = PRICING_PER_MILLION_TOKENS.get(model)
+    if not prices or usage is None:
+        return None
+    return (
+        usage.input_tokens * prices["input"] + usage.output_tokens * prices["output"]
+    ) / 1_000_000
+
 _PROMPT = """Dostal si DVA obrazky: A a B. Je to TA ISTA fotka z elektro merania (rozvadzac, meraci pristroj, elektromer alebo stitok), obrazok B je otoceny o 180 stupnov oproti A. Prave jeden z nich je spravne orientovany. Text na pristrojoch je v nemcine.
 
 Odpovedz PRESNE v tomto formate (4 riadky, nic ine):
@@ -47,7 +66,7 @@ def _encode_image(image: Image.Image) -> str:
 
 
 def _parse_reply(text: str) -> dict:
-    result = {"rotate": 0, "reading": None, "Seriennr": None, "Zaehlernr": None}
+    result = {"rotate": 0, "reading": None, "Seriennr": None, "Zaehlernr": None, "cost_usd": None}
     for line in text.splitlines():
         if ":" not in line:
             continue
@@ -73,8 +92,9 @@ def analyze_photo(image: Image.Image, model: str = DEFAULT_MODEL) -> dict:
     stupnov) - porovnanie vedla seba je spolahlivejsie nez posudenie jednej
     fotky, najma pri elektromeroch s naopak nalepenymi nalepkami. Vrati dict:
     {"rotate": 0/180, "reading": str|None, "Seriennr": str|None,
-     "Zaehlernr": str|None}. Rotacia je relativna k dodanej fotke.
-    Vynimky necha prejst - volajuci ich osetri (API rezim je volitelny)."""
+     "Zaehlernr": str|None, "cost_usd": float|None}. Rotacia je relativna
+    k dodanej fotke. Vynimky necha prejst - volajuci ich osetri (API rezim
+    je volitelny)."""
     import anthropic
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -107,4 +127,6 @@ def analyze_photo(image: Image.Image, model: str = DEFAULT_MODEL) -> dict:
         }],
     )
     reply = "".join(block.text for block in message.content if block.type == "text")
-    return _parse_reply(reply)
+    result = _parse_reply(reply)
+    result["cost_usd"] = _estimate_cost_usd(model, message.usage)
+    return result

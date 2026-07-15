@@ -67,6 +67,7 @@ def process_folder(
     photo_count = 0
     uncertain_count = 0
     error_count = 0
+    cost_usd = 0.0
 
     sorted_photos = rotate.sort_photos(rotate.list_photos(photos_folder))
     total = len(sorted_photos)
@@ -88,6 +89,8 @@ def process_folder(
 
                 try:
                     result = claude_check.analyze_photo(image)
+                    if result.get("cost_usd"):
+                        cost_usd += result["cost_usd"]
                     if result["rotate"]:
                         image = image.rotate(-result["rotate"], expand=True)
                         rotation_applied = (rotation_applied + result["rotate"]) % 360
@@ -139,6 +142,8 @@ def process_folder(
         ids_lines.append(f"(najdene na fotke: {ids_source_file})")
     else:
         ids_lines.append("(nepodarilo sa najst ziadne z ID cisel na prvych fotkach)")
+    if cost_usd:
+        ids_lines.append(f"Cena AI kontroly: ${cost_usd:.4f}")
 
     (out_dir / "identifikacne_cisla.txt").write_text("\n".join(ids_lines), encoding="utf-8")
     (out_dir / "log.txt").write_text("\n".join(log_lines), encoding="utf-8")
@@ -148,6 +153,7 @@ def process_folder(
         "photo_count": photo_count,
         "uncertain_count": uncertain_count,
         "error_count": error_count,
+        "cost_usd": cost_usd,
     }
 
 
@@ -160,7 +166,8 @@ def run_job(
 ) -> dict:
     """Cely beh: najde priecinky s fotkami a kazdy spracuje samostatne.
     `progress(done_total, total_photos, message)` hlasi celkovy priebeh.
-    Vrati {"output_root": Path, "summary": str, "total_photos": int}."""
+    Vrati {"output_root": Path, "summary": str, "total_photos": int,
+    "cost_usd": float}."""
     photo_folders = find_photo_folders(folder)
     if not photo_folders:
         raise RuntimeError(
@@ -172,6 +179,7 @@ def run_job(
     total_photos = sum(totals.values())
     output_root = make_output_dir(folder)
     done_before = 0
+    total_cost_usd = 0.0
 
     if photo_folders == [folder]:
         def folder_progress(done, total, name):
@@ -180,6 +188,7 @@ def run_job(
 
         info = process_folder(folder, output_root, use_ocr, use_claude_api,
                               folder_progress, cancel_event)
+        total_cost_usd = info["cost_usd"]
         summary = "\n".join(info["ids_lines"])
         if info["uncertain_count"]:
             summary += f"\n\nPOZOR: {info['uncertain_count']} fotiek ma neistu rotaciu - pozri log.txt"
@@ -199,6 +208,7 @@ def run_job(
             info = process_folder(photos_folder, out_sub, use_ocr, use_claude_api,
                                   folder_progress, cancel_event)
             done_before += totals[photos_folder]
+            total_cost_usd += info["cost_usd"]
             overview_lines.append(f"[{label}]")
             overview_lines.extend(info["ids_lines"])
             note = f"(fotiek: {info['photo_count']}"
@@ -214,7 +224,16 @@ def run_job(
             f"Priecinkov: {len(photo_folders)}, fotiek spolu: {total_photos}",
             "",
         ] + overview_lines
+        if total_cost_usd:
+            overview.insert(2, f"Cena AI kontroly spolu: ${total_cost_usd:.4f}")
         (output_root / "prehlad.txt").write_text("\n".join(overview), encoding="utf-8")
         summary = "\n".join(overview_lines).strip()
+        if total_cost_usd:
+            summary += f"\n\nCena AI kontroly spolu: ${total_cost_usd:.4f}"
 
-    return {"output_root": output_root, "summary": summary, "total_photos": total_photos}
+    return {
+        "output_root": output_root,
+        "summary": summary,
+        "total_photos": total_photos,
+        "cost_usd": total_cost_usd,
+    }

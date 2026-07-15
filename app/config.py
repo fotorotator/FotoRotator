@@ -63,24 +63,39 @@ def _unprotect(value: str) -> str:
     return _bytes_from_blob(blob_out).decode("utf-8")
 
 
-def load() -> dict:
-    config = {"api_key": ""}
+def _read_raw() -> dict:
     if CONFIG_PATH.exists():
         try:
-            config.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
+    return {}
+
+
+def _write_raw(config: dict):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+
+def load() -> dict:
+    config = {"api_key": "", "total_cost_usd": 0.0}
+    config.update(_read_raw())
     config["api_key"] = _unprotect(config.get("api_key", ""))
+    config["total_cost_usd"] = float(config.get("total_cost_usd", 0.0))
     return config
 
 
 def save_api_key(api_key: str):
-    config = {}
-    if CONFIG_PATH.exists():
-        try:
-            config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
+    config = _read_raw()
     config["api_key"] = _protect(api_key) if api_key else ""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    _write_raw(config)
+
+
+def add_total_cost_usd(amount: float) -> float:
+    """Pripocita amount k celkovej minutej sume za AI kontrolu (ulozenej
+    lokalne v config.json) a vrati novy celkovy sucet."""
+    config = _read_raw()
+    total = float(config.get("total_cost_usd", 0.0)) + amount
+    config["total_cost_usd"] = total
+    _write_raw(config)
+    return total
