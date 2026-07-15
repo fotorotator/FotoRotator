@@ -13,7 +13,8 @@ from pathlib import Path
 
 from . import id_extract, rotate
 
-MAX_LABEL_ATTEMPTS = 5  # kolko prvych fotiek skusit pre Seriennr./Zaehlernr.
+MAX_LABEL_ATTEMPTS = 10  # kolko prvych fotiek skusit pre Seriennr./Zaehlernr. (lokalny OCR fallback;
+# v rezime AI kontroly sa Seriennr/Zaehlernr aj tak skusa na KAZDEJ fotke cez Claude, bez tohto limitu)
 
 # Zobrazovacie popisky (interne sa pouziva ASCII kluc "Zaehlernr" kvoli
 # regexom a bezpecnemu vypisu).

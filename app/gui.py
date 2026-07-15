@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import queue
+import re
 import sys
 import threading
 from pathlib import Path
@@ -27,7 +28,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 API_KEYS_URL = "https://console.anthropic.com/settings/keys"
-APP_VERSION = "0.4.3"
+APP_VERSION = "0.4.4"
 
 # Ponuka modelov pre AI kontrolu - poznamka pri kazdom hovori o cene/kvalite
 # (ceny za milion tokenov vstup/vystup, k 7/2026). Haiku 4.5 je default -
@@ -39,6 +40,14 @@ MODEL_OPTIONS = {
     "Claude Fable 5 — najsilnejší vôbec, ~10× drahší ($10 / $50)": "claude-fable-5",
 }
 _MODEL_ID_TO_LABEL = {v: k for k, v in MODEL_OPTIONS.items()}
+
+# Riadok vysledku v tvare "Popis: hodnota" (Seriennr, Zählernr, Stav
+# elektromera (1.8.0), Cena AI kontroly, ...) - takyto riadok dostane v okne
+# vysledku vlastne tlacidlo "Kopírovať". Poznamky, ktore CELE zacinaju
+# zatvorkou (napr. "(najdene na fotke: ...)"), a nadpisy priecinkov v [ ]
+# sa takto nerozpoznaju - zobrazia sa ako obycajny text (osetrene v cykle,
+# lebo popis sam moze obsahovat zatvorku, napr. "Stav elektromera (1.8.0)").
+_RESULT_KV_LINE = re.compile(r"^([^:]{1,40}):\s(.+)$")
 
 
 def _resource_path(relative: str) -> Path:
@@ -161,7 +170,7 @@ class App(ctk.CTk):
 
         self.tray_icon = None
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.bind("<Unmap>", self._on_unmap)
+        self.bind("<FocusIn>", self._on_focus_in)
         self.after(100, self._poll_queue)
 
         if auto_start and initial_folder:
@@ -186,6 +195,20 @@ class App(ctk.CTk):
 
     def _refresh_cost_label(self):
         self.cost_label.configure(text=f"minuté doteraz: ${self.total_cost_usd:.4f}")
+
+    def _on_focus_in(self, event):
+        if event.widget is self:
+            self._reload_cost_from_disk()
+
+    def _reload_cost_from_disk(self):
+        """Znova nacita celkovu minutu sumu zo suboru - rieli, ked ju medzitym
+        zmenila ina spustena kopia programu (napr. druhe okno) a tato relacia
+        by inak ukazovala zastaralu hodnotu z vlastneho startu."""
+        try:
+            self.total_cost_usd = config.load()["total_cost_usd"]
+        except Exception:
+            pass
+        self._refresh_cost_label()
 
     def _set_running(self, running: bool):
         state = "disabled" if running else "normal"
@@ -232,6 +255,7 @@ class App(ctk.CTk):
             self.log("API kľúč zmazaný — program pobeží offline.")
 
     def start(self):
+        self._reload_cost_from_disk()
         folder_text = self.folder_var.get().strip().strip('"')
         if not folder_text:
             messagebox.showinfo("Priečinok", "Najprv vyber priečinok s fotkami.")
@@ -295,6 +319,77 @@ class App(ctk.CTk):
         if self.output_root and self.output_root.exists():
             os.startfile(self.output_root)
 
+    def _copy_to_clipboard(self, text: str):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.update()  # bez tohto sa obsah schranky niekedy strati po strate fokusu
+
+    def _show_result_dialog(self, summary: str, output_root: Path):
+        """Okno s vysledkom - kazda hodnota (Seriennr, Zählernr, stav
+        elektromera, ...) ma vlastne tlacidlo 'Kopírovať', nemusi sa
+        vypisovat rucne z logu."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Výsledok")
+        dialog.geometry("580x520")
+        dialog.minsize(420, 320)
+        try:
+            dialog.iconbitmap(str(_resource_path("assets/icon.ico")))
+        except Exception:
+            pass
+
+        top_row = ctk.CTkFrame(dialog, fg_color="transparent")
+        top_row.pack(fill="x", padx=14, pady=(14, 6))
+        ctk.CTkLabel(top_row, text="Hotovo", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left")
+        ctk.CTkButton(
+            top_row, text="Kopírovať všetko", width=150,
+            command=lambda: self._copy_to_clipboard(summary),
+        ).pack(side="right")
+
+        scroll = ctk.CTkScrollableFrame(dialog)
+        scroll.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+
+        for raw_line in summary.splitlines():
+            line = raw_line.rstrip()
+            if not line:
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                ctk.CTkLabel(
+                    scroll, text=line, font=ctk.CTkFont(weight="bold"), anchor="w",
+                ).pack(fill="x", pady=(10, 2))
+                continue
+            match = None if line.startswith("(") else _RESULT_KV_LINE.match(line)
+            if match:
+                label, value = match.group(1), match.group(2)
+                row = ctk.CTkFrame(scroll, fg_color="transparent")
+                row.pack(fill="x", pady=2)
+                ctk.CTkLabel(row, text=f"{label}:", width=150, anchor="w").pack(side="left")
+                ctk.CTkLabel(row, text=value, anchor="w", justify="left", wraplength=230).pack(
+                    side="left", fill="x", expand=True, padx=(0, 8)
+                )
+                ctk.CTkButton(
+                    row, text="Kopírovať", width=90,
+                    command=lambda v=value: self._copy_to_clipboard(v),
+                ).pack(side="right")
+            else:
+                ctk.CTkLabel(scroll, text=line, anchor="w", justify="left", wraplength=520).pack(
+                    fill="x", pady=1
+                )
+
+        bottom_row = ctk.CTkFrame(dialog, fg_color="transparent")
+        bottom_row.pack(fill="x", padx=14, pady=(0, 14))
+        ctk.CTkButton(
+            bottom_row, text="Otvoriť výstupný priečinok",
+            command=lambda: os.startfile(output_root),
+        ).pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(
+            bottom_row, text="Zavrieť", width=90, fg_color="gray30", hover_color="gray25",
+            command=dialog.destroy,
+        ).pack(side="right")
+
+        dialog.transient(self)
+        dialog.lift()
+        dialog.focus_force()
+
     def on_close(self):
         if self.worker and self.worker.is_alive():
             answer = messagebox.askyesnocancel(
@@ -314,12 +409,6 @@ class App(ctk.CTk):
         self.destroy()
 
     # ---------- systemova lista ----------
-
-    def _on_unmap(self, event):
-        # Fici aj pri minimalizovani cez OS tlacidlo na titulnom pruhu, nielen
-        # cez nase tlacidlo "Skryt do listy".
-        if event.widget is self and self.state() == "iconic":
-            self.minimize_to_tray()
 
     def minimize_to_tray(self):
         if self.tray_icon is not None:
@@ -421,7 +510,7 @@ class App(ctk.CTk):
                     if self.tray_icon is not None:
                         self._tray_notify("FotoRotator — Hotovo", result["summary"])
                     elif not was_cancelled:
-                        messagebox.showinfo("Hotovo", f"{result['summary']}\n\nVýstup:\n{self.output_root}")
+                        self._show_result_dialog(result["summary"], self.output_root)
                 elif kind == "error":
                     self._set_running(False)
                     self.status_label.configure(text="Chyba.")
@@ -436,6 +525,7 @@ class App(ctk.CTk):
                     self.state("normal")
                     self.lift()
                     self.focus_force()
+                    self._reload_cost_from_disk()
                 elif kind == "tray_quit":
                     if self.worker and self.worker.is_alive():
                         self.cancel_event.set()
