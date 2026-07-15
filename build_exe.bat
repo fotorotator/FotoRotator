@@ -1,6 +1,6 @@
 @echo off
 echo Balim FotoRotator do .exe...
-pyinstaller --onefile --console --noconfirm --name FotoRotator --collect-data pillow_heif --collect-data pytesseract run.py
+pyinstaller --onefile --windowed --noconfirm --name FotoRotator --collect-data customtkinter --collect-data pillow_heif --collect-data pytesseract run.py
 if errorlevel 1 goto :eof
 
 echo.

@@ -35,7 +35,14 @@ jednoducho.
 ```
 FotoRotator/
   app/
-    main.py              — vstupný bod, orchestrácia celého behu
+    main.py              — vstupný bod, spúšťa okno programu (gui.py)
+    gui.py               — okno programu (customtkinter ako StrategyScribe):
+                           výber priečinka, uloženie API kľúča, Spustiť/Zastaviť,
+                           progress bar, živý log, otvorenie výstupu
+    pipeline.py          — samotné spracovanie (process_folder/run_job, progress
+                           callback, cancel_event) — oddelené od GUI
+    config.py            — config.json v %APPDATA%\FotoRotator, API kľúč šifrovaný
+                           DPAPI cez ctypes (bez pywin32)
     rotate.py            — triedenie fotiek podľa času, EXIF/OCR rotácia
     id_extract.py        — extrakcia Seriennr./Zählernr. (lokálny OCR + regexy)
     claude_check.py      — voliteľný API režim (--use-claude-api): každá fotka sa

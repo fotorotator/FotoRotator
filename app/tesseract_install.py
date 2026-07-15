@@ -69,8 +69,8 @@ def get_latest_installer_url() -> str:
     return best_url or FALLBACK_INSTALLER_URL
 
 
-def _download(url: str, dest: Path, label: str):
-    print(f"Stahujem {label}...")
+def _download(url: str, dest: Path, label: str, log=print):
+    log(f"Stahujem {label}...")
     with urllib.request.urlopen(url, timeout=30) as response:
         total = int(response.headers.get("Content-Length", 0)) or None
         done = 0
@@ -81,18 +81,15 @@ def _download(url: str, dest: Path, label: str):
                     break
                 f.write(chunk)
                 done += len(chunk)
-                if total:
-                    print(f"\r  {done / (1024*1024):.1f} / {total / (1024*1024):.1f} MB", end="")
-                else:
-                    print(f"\r  {done / (1024*1024):.1f} MB", end="")
-    print()
+    size_mb = done / (1024 * 1024)
+    log(f"  stiahnute {size_mb:.1f} MB")
 
 
-def _download_deu(dest: Path):
+def _download_deu(dest: Path, log=print):
     last_error = None
     for url in DEU_TRAINEDDATA_URLS:
         try:
-            _download(url, dest, "nemecky jazykovy balik (deu)")
+            _download(url, dest, "nemecky jazykovy balik (deu)", log)
             return
         except Exception as exc:
             last_error = exc
@@ -118,15 +115,15 @@ def _tessdata_dir(tesseract_cmd: str | None) -> Path:
     return DEFAULT_INSTALL_DIR / "tessdata"
 
 
-def install_full() -> bool:
+def install_full(log=print) -> bool:
     """Stiahne a ticho nainstaluje cely Tesseract + doplni nemcinu.
     Vrati True pri uspechu."""
     work_dir = Path(tempfile.mkdtemp(prefix="fotorotator_tesseract_"))
     installer_path = work_dir / "tesseract_setup.exe"
     deu_path = work_dir / "deu.traineddata"
 
-    _download(get_latest_installer_url(), installer_path, "instalator Tesseract OCR")
-    _download_deu(deu_path)
+    _download(get_latest_installer_url(), installer_path, "instalator Tesseract OCR", log)
+    _download_deu(deu_path, log)
 
     tessdata = DEFAULT_INSTALL_DIR / "tessdata"
     bat_path = work_dir / "install.bat"
@@ -138,19 +135,19 @@ def install_full() -> bool:
         encoding="utf-8",
     )
 
-    print("Instalujem Tesseract (povol pristup v okne Windows, ktore vyskoci)...")
+    log("Instalujem Tesseract (povol pristup v okne Windows, ktore vyskoci)...")
     if not _run_elevated_bat(bat_path):
-        print("Instalacia bola zrusena (nepovoleny pristup spravcu).")
+        log("Instalacia bola zrusena (nepovoleny pristup spravcu).")
         return False
     return True
 
 
-def install_german_only(tesseract_cmd: str | None) -> bool:
+def install_german_only(tesseract_cmd: str | None, log=print) -> bool:
     """Tesseract uz je nainstalovany, chyba len nemcina - stiahne
     deu.traineddata a skopiruje ho (s pravami spravcu) do tessdata."""
     work_dir = Path(tempfile.mkdtemp(prefix="fotorotator_tesseract_"))
     deu_path = work_dir / "deu.traineddata"
-    _download_deu(deu_path)
+    _download_deu(deu_path, log)
 
     tessdata = _tessdata_dir(tesseract_cmd)
     bat_path = work_dir / "install_deu.bat"
@@ -160,8 +157,8 @@ def install_german_only(tesseract_cmd: str | None) -> bool:
         encoding="utf-8",
     )
 
-    print("Kopirujem nemecky jazykovy balik (povol pristup v okne Windows)...")
+    log("Kopirujem nemecky jazykovy balik (povol pristup v okne Windows)...")
     if not _run_elevated_bat(bat_path):
-        print("Kopirovanie bolo zrusene (nepovoleny pristup spravcu).")
+        log("Kopirovanie bolo zrusene (nepovoleny pristup spravcu).")
         return False
     return True
