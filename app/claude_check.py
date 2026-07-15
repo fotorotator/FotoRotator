@@ -19,7 +19,7 @@ import re
 
 from PIL import Image
 
-DEFAULT_MODEL = "claude-sonnet-5"
+DEFAULT_MODEL = "claude-haiku-4-5"  # najlacnejsi model s vision - overene na realnych fotkach, presne ako Sonnet 5
 MAX_IMAGE_SIDE = 1568  # odporucane maximum pre Claude vision, staci aj na LCD
 
 _PROMPT = """Dostal si DVA obrazky: A a B. Je to TA ISTA fotka z elektro merania (rozvadzac, meraci pristroj, elektromer alebo stitok), obrazok B je otoceny o 180 stupnov oproti A. Prave jeden z nich je spravne orientovany. Text na pristrojoch je v nemcine.
