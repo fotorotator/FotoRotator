@@ -171,10 +171,20 @@ def output_name_for(index: int, source_path: Path) -> str:
     return f"{index:03d}_{source_path.name}"
 
 
-def save_output(image: Image.Image, source_path: Path, dest_path: Path):
+def save_output(
+    image: Image.Image, source_path: Path, dest_path: Path,
+    max_side: int | None = None, quality: int = 95,
+):
+    """Ulozi vystupnu fotku. `max_side` (ak je zadany) zmensi dlhsiu stranu
+    najviac na tento rozmer - pouziva sa na znizenie velkosti suboru pri
+    zachovani citatelnosti (viz gui.QUALITY_PRESETS)."""
+    if max_side:
+        image = image.copy()
+        image.thumbnail((max_side, max_side), Image.LANCZOS)
+
     if source_path.suffix.lower() in _CONVERT_TO_JPEG:
-        image.convert("RGB").save(dest_path, format="JPEG", quality=95)
+        image.convert("RGB").save(dest_path, format="JPEG", quality=quality)
     elif source_path.suffix.lower() in (".jpg", ".jpeg"):
-        image.save(dest_path, quality=95)
+        image.save(dest_path, quality=quality)
     else:
         image.save(dest_path)

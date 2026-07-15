@@ -14,14 +14,15 @@ a z prvej fotky (štítok meracieho prístroja) vytiahne **Seriennr.** a
    stačí spúšťať cez túto skratku. Pôvodný stiahnutý súbor môžeš pokojne
    zmazať, netreba ho už.
 3. Otvorí sa **okno programu**: vyber priečinok (zákazku alebo jedno meranie),
-   prípadne vlož **Claude API kľúč** (voliteľné, zapne AI kontrolu — kľúč sa
-   uloží bezpečne a stačí ho zadať raz) a klikni **Spustiť**. Okno ukazuje
-   priebeh (ktorá fotka sa spracúva), živý log a na konci výsledky
-   s tlačidlom "Otvoriť výstupný priečinok".
-4. Tlačidlom **"Skryť do lišty"** (alebo klikom na bežné minimalizovanie okna)
-   sa program schová do systémovej lišty vedľa hodín a spracovanie beží ďalej
-   na pozadí — po dokončení príde upozornenie priamo z lišty. Klikom na
-   ikonu sa okno vráti späť.
+   zvoľ **kvalitu uložených fotiek** (pozri nižšie), prípadne vlož **Claude
+   API kľúč** (voliteľné, zapne AI kontrolu — kľúč sa uloží bezpečne a stačí
+   ho zadať raz) a klikni **Spustiť**. Okno ukazuje priebeh (ktorá fotka sa
+   spracúva), živý log a na konci výsledky — pri Seriennr./Zählernr./stave
+   elektromera je rovno tlačidlo **"Kopírovať"**.
+4. Tlačidlom **"Skryť do lišty"** sa program schová do systémovej lišty vedľa
+   hodín a spracovanie beží ďalej na pozadí — po dokončení príde upozornenie
+   priamo z lišty. Klikom na ikonu sa okno vráti späť. (Bežné minimalizovanie
+   okna funguje klasicky, ide na lištu úloh.)
 5. Ak na počítači chýba **Tesseract OCR** (potrebný na rozpoznanie správneho
    smeru otočenia a čítanie štítku), program ho pri spustení **sám ponúkne
    stiahnuť a nainštalovať** — vždy aktuálnu verziu, automaticky aj
@@ -56,6 +57,21 @@ Originálne fotky sa nikdy nemenia ani nemažú — program z nich iba číta.
 5. Na prvých pár fotkách skúša OCR (`deu+eng`) nájsť `Seriennr.:` a
    `Zählernr.:` (tolerantne aj na drobné OCR chyby) a zapíše ich do
    `identifikacne_cisla.txt`
+
+### Kvalita uložených fotiek
+
+V okne si vyberieš, v akej kvalite sa majú otočené fotky uložiť:
+
+| Voľba | Rozmer | Veľkosť súboru (orientačne) | Čitateľnosť |
+|---|---|---|---|
+| **Originál** | bez zmeny (napr. 4000×3000) | najväčšie (~2–4 MB/fotka) | najlepšia |
+| **Stredná** | max. 2000 px | výrazne menšie (~250 KB/fotka) | veľmi dobrá |
+| **Nízka** | max. 1280 px | najmenšie (~50–100 KB/fotka) | stále úplne čitateľné (overené na reálnom štítku) |
+
+Zmenšenie sa týka **iba veľkosti uloženého obrázka** — rozpoznávanie
+rotácie, čítanie štítku aj presnosť AI kontroly bežia vždy na plnom
+rozlíšení, kvalita výstupu sa nedotýka funkčnosti programu. Voľba sa
+zapamätá pre budúce behy.
 
 ### AI kontrola (Claude API) — odporúčané
 

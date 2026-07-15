@@ -47,17 +47,30 @@ FotoRotator/
                            okno (iconbitmap) aj tray ikonu
     gui.py               — okno programu (customtkinter ako StrategyScribe):
                            APP_VERSION v titulku okna, vlastná ikona, výber priečinka,
-                           uloženie API kľúča, výber AI modelu (MODEL_OPTIONS - 4
-                           možnosti s poznámkou o cene), Spustiť/Zastaviť, progress
-                           bar, živý log, otvorenie výstupu, skrytie do systémovej
-                           lišty (pystray) — beh pokračuje na pozadí, po dokončení
-                           príde upozornenie z lišty; zobrazuje aj celkovú minutú
-                           sumu za AI kontrolu (config.total_cost_usd)
+                           výber kvality uložených fotiek (QUALITY_PRESETS - Originál/
+                           Stredná/Nízka, len max_side+quality pre rotate.save_output,
+                           detekcia/OCR/AI bežia vždy na plnom rozlíšení), uloženie
+                           API kľúča, výber AI modelu (MODEL_OPTIONS - 4 možnosti
+                           s poznámkou o cene), Spustiť/Zastaviť, progress bar, živý
+                           log, dialóg výsledku s tlačidlami "Kopírovať" pri každej
+                           hodnote (_show_result_dialog), skrytie do systémovej lišty
+                           (pystray, len cez tlačidlo — bežné minimalizovanie ide na
+                           štandardnú lištu úloh) — beh pokračuje na pozadí, po
+                           dokončení príde upozornenie z lišty; zobrazuje aj celkovú
+                           minutú sumu za AI kontrolu (config.total_cost_usd, vždy
+                           znova načítaná zo súboru pri starte behu/návrate z lišty/
+                           fokuse okna, nech neostáva zastaraná pri viacerých bežiacich
+                           kópiách)
     pipeline.py          — samotné spracovanie (process_folder/run_job, progress
-                           callback, cancel_event, model) — oddelené od GUI
+                           callback, cancel_event, model, max_side, quality) —
+                           oddelené od GUI
     config.py            — config.json v %APPDATA%\FotoRotator: API kľúč šifrovaný
-                           DPAPI cez ctypes (bez pywin32), total_cost_usd, model
-    rotate.py            — triedenie fotiek podľa času, EXIF/OCR rotácia
+                           DPAPI cez ctypes (bez pywin32), total_cost_usd, model,
+                           quality. POZOR pri testovaní: pracuje s REÁLNYM súborom,
+                           nie testovacím — pri automatizovaných testoch GUI zálohovať
+                           a presne obnoviť obsah (viz pamäť projektu, 15.7.2026)
+    rotate.py            — triedenie fotiek podľa času, EXIF/OCR rotácia; save_output
+                           prijíma max_side/quality (zmenšenie VÝSTUPU, nie detekcie)
     id_extract.py        — extrakcia Seriennr./Zählernr. (lokálny OCR + regexy)
     claude_check.py      — voliteľný API režim (--use-claude-api): každá fotka sa
                            pošle na Claude vision v DVOCH orientáciách (A + B=180°)

@@ -56,9 +56,13 @@ def process_folder(
     progress=None,
     cancel_event: threading.Event | None = None,
     model: str | None = None,
+    max_side: int | None = None,
+    quality: int = 95,
 ) -> dict:
     """Spracuje JEDEN priecinok s fotkami do out_dir. `progress(done_in_folder,
-    total_in_folder, message)` sa vola po kazdej fotke. Vrati suhrn."""
+    total_in_folder, message)` sa vola po kazdej fotke. `max_side`/`quality`
+    riadia velkost/kvalitu ulozenych fotiek (viz rotate.save_output). Vrati
+    suhrn."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log_lines = []
@@ -110,7 +114,7 @@ def process_folder(
                 except Exception as exc:
                     log_lines.append(f"  Claude API zlyhalo pri fotke {output_name}: {exc}")
 
-            rotate.save_output(image, path, out_dir / output_name)
+            rotate.save_output(image, path, out_dir / output_name, max_side=max_side, quality=quality)
             photo_count += 1
 
             time_source = "EXIF" if used_exif else "datum zmeny suboru"
@@ -166,6 +170,8 @@ def run_job(
     progress=None,
     cancel_event: threading.Event | None = None,
     model: str | None = None,
+    max_side: int | None = None,
+    quality: int = 95,
 ) -> dict:
     """Cely beh: najde priecinky s fotkami a kazdy spracuje samostatne.
     `progress(done_total, total_photos, message)` hlasi celkovy priebeh.
@@ -190,7 +196,8 @@ def run_job(
                 progress(done, total_photos, name)
 
         info = process_folder(folder, output_root, use_ocr, use_claude_api,
-                              folder_progress, cancel_event, model=model)
+                              folder_progress, cancel_event, model=model,
+                              max_side=max_side, quality=quality)
         total_cost_usd = info["cost_usd"]
         summary = "\n".join(info["ids_lines"])
         if info["uncertain_count"]:
@@ -209,7 +216,8 @@ def run_job(
                     progress(_base + done, total_photos, f"{_label} - {name}")
 
             info = process_folder(photos_folder, out_sub, use_ocr, use_claude_api,
-                                  folder_progress, cancel_event, model=model)
+                                  folder_progress, cancel_event, model=model,
+                                  max_side=max_side, quality=quality)
             done_before += totals[photos_folder]
             total_cost_usd += info["cost_usd"]
             overview_lines.append(f"[{label}]")

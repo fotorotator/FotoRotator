@@ -28,7 +28,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 API_KEYS_URL = "https://console.anthropic.com/settings/keys"
-APP_VERSION = "0.4.4"
+APP_VERSION = "0.4.5"
 
 # Ponuka modelov pre AI kontrolu - poznamka pri kazdom hovori o cene/kvalite
 # (ceny za milion tokenov vstup/vystup, k 7/2026). Haiku 4.5 je default -
@@ -40,6 +40,17 @@ MODEL_OPTIONS = {
     "Claude Fable 5 — najsilnejší vôbec, ~10× drahší ($10 / $50)": "claude-fable-5",
 }
 _MODEL_ID_TO_LABEL = {v: k for k, v in MODEL_OPTIONS.items()}
+
+# Kvalita ulozenych fotiek - "max_side" zmensi dlhsiu stranu (None = bez
+# zmeny), "quality" je JPEG kvalita. Nizsia kvalita = mensi subor na disku,
+# fotky ostavaju citatelne (1280px je rovnaky rad velkosti, aky uz posielame
+# Claude vision - ten na tom bez problemov precita aj sedemsegmentovy displej).
+QUALITY_PRESETS = {
+    "Originál — bez zmenšenia (najväčšie súbory)": {"key": "original", "max_side": None, "quality": 95},
+    "Stredná — výrazne menšie súbory, veľmi dobre čitateľné": {"key": "stredna", "max_side": 2000, "quality": 85},
+    "Nízka — najmenšie súbory, stále čitateľné": {"key": "nizka", "max_side": 1280, "quality": 75},
+}
+_QUALITY_KEY_TO_LABEL = {v["key"]: k for k, v in QUALITY_PRESETS.items()}
 
 # Riadok vysledku v tvare "Popis: hodnota" (Seriennr, Zählernr, Stav
 # elektromera (1.8.0), Cena AI kontroly, ...) - takyto riadok dostane v okne
@@ -81,6 +92,7 @@ class App(ctk.CTk):
         self.saved_api_key = saved_config["api_key"]
         self.total_cost_usd = saved_config["total_cost_usd"]
         self.selected_model = saved_config["model"] or claude_check.DEFAULT_MODEL
+        self.selected_quality = saved_config["quality"] or "original"
 
         pad = {"padx": 12, "pady": (6, 0)}
 
@@ -94,6 +106,17 @@ class App(ctk.CTk):
         self.folder_entry.pack(side="left", fill="x", expand=True, pady=10)
         self.pick_button = ctk.CTkButton(folder_frame, text="Vybrať…", width=90, command=self.pick_folder)
         self.pick_button.pack(side="left", padx=12, pady=10)
+
+        # --- Kvalita ulozenych fotiek ---
+        quality_frame = ctk.CTkFrame(self)
+        quality_frame.pack(fill="x", **pad)
+        ctk.CTkLabel(quality_frame, text="Kvalita uložených fotiek:").pack(side="left", padx=(12, 8), pady=10)
+        self.quality_menu = ctk.CTkOptionMenu(
+            quality_frame, values=list(QUALITY_PRESETS.keys()), width=420,
+            command=self._on_quality_selected,
+        )
+        self.quality_menu.set(_QUALITY_KEY_TO_LABEL.get(self.selected_quality, next(iter(QUALITY_PRESETS))))
+        self.quality_menu.pack(side="left", padx=(0, 12), pady=10)
 
         # --- API kluc ---
         api_frame = ctk.CTkFrame(self)
@@ -214,7 +237,7 @@ class App(ctk.CTk):
         state = "disabled" if running else "normal"
         for widget in (self.start_button, self.pick_button, self.folder_entry,
                        self.api_entry, self.api_save_button, self.api_delete_button,
-                       self.ai_checkbox, self.model_menu):
+                       self.ai_checkbox, self.model_menu, self.quality_menu):
             widget.configure(state=state)
         self.stop_button.configure(state="normal" if running else "disabled")
 
@@ -228,6 +251,10 @@ class App(ctk.CTk):
     def _on_model_selected(self, label: str):
         self.selected_model = MODEL_OPTIONS[label]
         config.save_model(self.selected_model)
+
+    def _on_quality_selected(self, label: str):
+        self.selected_quality = QUALITY_PRESETS[label]["key"]
+        config.save_quality(self.selected_quality)
 
     def save_api_key(self):
         key = self.api_entry.get().strip()
@@ -304,7 +331,8 @@ class App(ctk.CTk):
         self.progress.set(0)
         self._set_running(True)
         model_note = f"  (AI kontrola zapnutá — {_MODEL_ID_TO_LABEL.get(self.selected_model, self.selected_model)})"
-        self.log(f"Štart: {folder}" + (model_note if use_api else "  (offline režim)"))
+        quality_note = f", kvalita fotiek: {_QUALITY_KEY_TO_LABEL.get(self.selected_quality, self.selected_quality)}"
+        self.log(f"Štart: {folder}" + (model_note if use_api else "  (offline režim)") + quality_note)
 
         self.worker = threading.Thread(
             target=self._worker, args=(folder, install_action, use_api), daemon=True
@@ -468,8 +496,10 @@ class App(ctk.CTk):
             def progress(done, total, message):
                 self.queue.put(("progress", done, total, message))
 
+            quality_preset = QUALITY_PRESETS[_QUALITY_KEY_TO_LABEL[self.selected_quality]]
             result = pipeline.run_job(folder, use_ocr, use_api, progress, self.cancel_event,
-                                      model=self.selected_model)
+                                      model=self.selected_model,
+                                      max_side=quality_preset["max_side"], quality=quality_preset["quality"])
             if result.get("cost_usd"):
                 result["lifetime_cost_usd"] = config.add_total_cost_usd(result["cost_usd"])
             self.queue.put(("done", result))
