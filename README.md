@@ -28,6 +28,12 @@ Originálne fotky sa nikdy nemenia ani nemažú — program z nich iba číta.
 1. Zoradí fotky presne podľa času vytvorenia (EXIF `DateTimeOriginal`, inak
    dátum poslednej zmeny súboru) a toto poradie zachová aj vo výstupe
    (`001_...`, `002_...`, ...)
+0. **Podpriečinky:** ak vybraný priečinok obsahuje podpriečinky s fotkami
+   (napr. jeden priečinok na zákazku a v ňom 8–10 podpriečinkov s jednotlivými
+   meraniami), program spracuje **každý podpriečinok samostatne** — vlastné
+   poradie, číslovanie od 001 aj vlastné ID čísla. Fotky z rôznych
+   podpriečinkov sa nikdy nepomiešajú. Výstup zrkadlí pôvodnú štruktúru
+   a navrch pribudne súhrnný `prehlad.txt` so všetkými nájdenými hodnotami.
 2. Otočí každú fotku do landscape orientácie — najprv aplikuje EXIF
    `Orientation`, a ak je fotka stále na výšku, cez Tesseract OCR (spoľahlivosť
    rozpoznaného textu pri 90°/270° otočení) zistí správny smer
