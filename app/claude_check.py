@@ -31,7 +31,9 @@ SERIENNR: <hodnota, alebo NIE>
 ZAEHLERNR: <hodnota, alebo NIE>
 
 Pravidla:
-- SPRAVNY: na ktorom obrazku su pristroje, ich displeje a POTLAC PRISTROJOV vzpriamene a citatelne. POZOR: samolepky/nalepky (napr. okruhla zlta "Nachster Pruftermin") byvaju na pristrojoch nalepene hore nohami - NERIAD sa nalepkami, riad sa displejmi (LCD cislice, kod 1.8.0, napis kWh) a potlacou pristrojov.
+- NAJDOLEZITEJSI udaj je STAV elektromera z LCD displeja - ak je na fotke displej, vsetko posudzuj podla neho.
+- Samolepky/nalepky (napr. okruhla zlta "Nachster Pruftermin") UPLNE IGNORUJ - byvaju nalepene hore nohami a klamu.
+- SPRAVNY: na ktorom obrazku su displeje (LCD cislice, kod 1.8.0, napis kWh) a potlac pristrojov vzpriamene a citatelne.
 - STAV: ak je na fotke elektromer s LCD displejom so stavom v kWh (pri hodnote byva kod 1.8.0 a jednotka kWh), precitaj HODNOTU zo SPRAVNEHO obrazka, vratane desatinnej bodky, napr. "02854.4". Cislice su sedemsegmentove. Ak taky displej na fotke nie je alebo sa neda precitat, napis NIE.
 - SERIENNR / ZAEHLERNR: ak je na fotke stitok s "Seriennr.:" alebo "Zaehlernr.:" (Zahler-Nr.), uved hodnoty zo spravneho obrazka. Inak NIE."""
 
