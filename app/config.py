@@ -78,7 +78,7 @@ def _write_raw(config: dict):
 
 
 def load() -> dict:
-    config = {"api_key": "", "total_cost_usd": 0.0}
+    config = {"api_key": "", "total_cost_usd": 0.0, "model": ""}
     config.update(_read_raw())
     config["api_key"] = _unprotect(config.get("api_key", ""))
     config["total_cost_usd"] = float(config.get("total_cost_usd", 0.0))
@@ -88,6 +88,12 @@ def load() -> dict:
 def save_api_key(api_key: str):
     config = _read_raw()
     config["api_key"] = _protect(api_key) if api_key else ""
+    _write_raw(config)
+
+
+def save_model(model_id: str):
+    config = _read_raw()
+    config["model"] = model_id
     _write_raw(config)
 
 

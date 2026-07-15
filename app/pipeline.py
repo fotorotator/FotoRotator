@@ -54,6 +54,7 @@ def process_folder(
     use_claude_api: bool,
     progress=None,
     cancel_event: threading.Event | None = None,
+    model: str | None = None,
 ) -> dict:
     """Spracuje JEDEN priecinok s fotkami do out_dir. `progress(done_in_folder,
     total_in_folder, message)` sa vola po kazdej fotke. Vrati suhrn."""
@@ -88,7 +89,7 @@ def process_folder(
                 from . import claude_check
 
                 try:
-                    result = claude_check.analyze_photo(image)
+                    result = claude_check.analyze_photo(image, model=model or claude_check.DEFAULT_MODEL)
                     if result.get("cost_usd"):
                         cost_usd += result["cost_usd"]
                     if result["rotate"]:
@@ -163,6 +164,7 @@ def run_job(
     use_claude_api: bool,
     progress=None,
     cancel_event: threading.Event | None = None,
+    model: str | None = None,
 ) -> dict:
     """Cely beh: najde priecinky s fotkami a kazdy spracuje samostatne.
     `progress(done_total, total_photos, message)` hlasi celkovy priebeh.
@@ -187,7 +189,7 @@ def run_job(
                 progress(done, total_photos, name)
 
         info = process_folder(folder, output_root, use_ocr, use_claude_api,
-                              folder_progress, cancel_event)
+                              folder_progress, cancel_event, model=model)
         total_cost_usd = info["cost_usd"]
         summary = "\n".join(info["ids_lines"])
         if info["uncertain_count"]:
@@ -206,7 +208,7 @@ def run_job(
                     progress(_base + done, total_photos, f"{_label} - {name}")
 
             info = process_folder(photos_folder, out_sub, use_ocr, use_claude_api,
-                                  folder_progress, cancel_event)
+                                  folder_progress, cancel_event, model=model)
             done_before += totals[photos_folder]
             total_cost_usd += info["cost_usd"]
             overview_lines.append(f"[{label}]")

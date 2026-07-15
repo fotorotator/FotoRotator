@@ -35,18 +35,28 @@ jednoducho.
 ```
 FotoRotator/
   app/
-    main.py              — vstupný bod, spúšťa okno programu (gui.py)
+    main.py              — vstupný bod: installer.ensure_installed() (auto-presun do
+                           Dokumentov + skratka), potom spúšťa okno programu (gui.py)
+    installer.py         — pri zabalenom .exe mimo Dokumenty\FotoRotator sa program
+                           skopíruje tam, vytvorí skratku na Plochu (PowerShell +
+                           WScript.Shell COM), znova sa spustí odtiaľ a pôvodný
+                           proces sa ukončí; ak je cieľ uzamknutý (uz beží), potichu
+                           pokračuje zo súčasnej kópie
+    icon.py              — ikona programu kreslená cez Pillow (draw_icon/save_ico),
+                           zdieľaná pre .ico (assets/icon.ico, --icon pri buildu),
+                           okno (iconbitmap) aj tray ikonu
     gui.py               — okno programu (customtkinter ako StrategyScribe):
-                           APP_VERSION v titulku okna, výber priečinka, uloženie
-                           API kľúča, Spustiť/Zastaviť, progress bar, živý log,
-                           otvorenie výstupu, skrytie do systémovej lišty (pystray)
-                           — beh pokračuje na pozadí, po dokončení príde upozornenie
-                           z lišty; zobrazuje aj celkovú minutú sumu za AI kontrolu
-                           (config.total_cost_usd)
+                           APP_VERSION v titulku okna, vlastná ikona, výber priečinka,
+                           uloženie API kľúča, výber AI modelu (MODEL_OPTIONS - 4
+                           možnosti s poznámkou o cene), Spustiť/Zastaviť, progress
+                           bar, živý log, otvorenie výstupu, skrytie do systémovej
+                           lišty (pystray) — beh pokračuje na pozadí, po dokončení
+                           príde upozornenie z lišty; zobrazuje aj celkovú minutú
+                           sumu za AI kontrolu (config.total_cost_usd)
     pipeline.py          — samotné spracovanie (process_folder/run_job, progress
-                           callback, cancel_event) — oddelené od GUI
-    config.py            — config.json v %APPDATA%\FotoRotator, API kľúč šifrovaný
-                           DPAPI cez ctypes (bez pywin32)
+                           callback, cancel_event, model) — oddelené od GUI
+    config.py            — config.json v %APPDATA%\FotoRotator: API kľúč šifrovaný
+                           DPAPI cez ctypes (bez pywin32), total_cost_usd, model
     rotate.py            — triedenie fotiek podľa času, EXIF/OCR rotácia
     id_extract.py        — extrakcia Seriennr./Zählernr. (lokálny OCR + regexy)
     claude_check.py      — voliteľný API režim (--use-claude-api): každá fotka sa

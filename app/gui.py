@@ -13,33 +13,44 @@ from __future__ import annotations
 
 import os
 import queue
+import sys
 import threading
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 import pystray
-from PIL import Image, ImageDraw
 
-from . import config, pipeline, rotate, tesseract_check, tesseract_install
+from . import claude_check, config, icon, pipeline, rotate, tesseract_check, tesseract_install
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 API_KEYS_URL = "https://console.anthropic.com/settings/keys"
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.4.3"
+
+# Ponuka modelov pre AI kontrolu - poznamka pri kazdom hovori o cene/kvalite
+# (ceny za milion tokenov vstup/vystup, k 7/2026). Haiku 4.5 je default -
+# overene na realnych fotkach, ze na tuto ulohu staci (viz CLAUDE.md).
+MODEL_OPTIONS = {
+    "Claude Haiku 4.5 — najlacnejší, odporúčané ($1 / $5)": "claude-haiku-4-5",
+    "Claude Sonnet 5 — kvalitnejší, ~2× drahší ($2 / $10)": "claude-sonnet-5",
+    "Claude Opus 4.8 — najkvalitnejší bežný, ~5× drahší ($5 / $25)": "claude-opus-4-8",
+    "Claude Fable 5 — najsilnejší vôbec, ~10× drahší ($10 / $50)": "claude-fable-5",
+}
+_MODEL_ID_TO_LABEL = {v: k for k, v in MODEL_OPTIONS.items()}
 
 
-def _make_tray_image() -> Image.Image:
-    """Jednoducha ikona pre listu - modry stvorec s bielou sipkou otacania,
-    kreslena cez Pillow (ziadny externy subor)."""
-    size = 64
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle([3, 3, size - 3, size - 3], radius=14, fill=(30, 110, 220, 255))
-    draw.arc([15, 15, size - 15, size - 15], start=25, end=300, fill=(255, 255, 255, 255), width=6)
-    draw.polygon([(size - 17, 17), (size - 6, 24), (size - 21, 33)], fill=(255, 255, 255, 255))
-    return image
+def _resource_path(relative: str) -> Path:
+    """Cesta k prilozenemu suboru (assets/...) - funguje aj v zabalenom
+    .exe (PyInstaller rozbaluje data do docasneho priecinka _MEIPASS)."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return base / relative
+
+
+def _make_tray_image():
+    """Ikona pre systemovu listu - rovnaka ako ikona programu, len mensia."""
+    return icon.draw_icon(64)
 
 
 class App(ctk.CTk):
@@ -48,6 +59,10 @@ class App(ctk.CTk):
         self.title(f"FotoRotator v{APP_VERSION}")
         self.geometry("760x680")
         self.minsize(660, 580)
+        try:
+            self.iconbitmap(str(_resource_path("assets/icon.ico")))
+        except Exception:
+            pass  # chybajuca/nepodporovana ikona nema brzdit spustenie appky
 
         self.queue: queue.Queue = queue.Queue()
         self.worker: threading.Thread | None = None
@@ -56,6 +71,7 @@ class App(ctk.CTk):
         saved_config = config.load()
         self.saved_api_key = saved_config["api_key"]
         self.total_cost_usd = saved_config["total_cost_usd"]
+        self.selected_model = saved_config["model"] or claude_check.DEFAULT_MODEL
 
         pad = {"padx": 12, "pady": (6, 0)}
 
@@ -85,6 +101,16 @@ class App(ctk.CTk):
                                                fg_color="gray30", hover_color="gray25",
                                                command=self.delete_api_key)
         self.api_delete_button.pack(side="left", padx=(0, 12))
+
+        model_row = ctk.CTkFrame(api_frame, fg_color="transparent")
+        model_row.pack(fill="x", padx=0, pady=(4, 0))
+        ctk.CTkLabel(model_row, text="Model AI kontroly:").pack(side="left", padx=(12, 8))
+        self.model_menu = ctk.CTkOptionMenu(
+            model_row, values=list(MODEL_OPTIONS.keys()), width=380,
+            command=self._on_model_selected,
+        )
+        self.model_menu.set(_MODEL_ID_TO_LABEL.get(self.selected_model, next(iter(MODEL_OPTIONS))))
+        self.model_menu.pack(side="left", padx=(0, 12))
 
         bottom_row = ctk.CTkFrame(api_frame, fg_color="transparent")
         bottom_row.pack(fill="x", padx=0, pady=(2, 8))
@@ -165,7 +191,7 @@ class App(ctk.CTk):
         state = "disabled" if running else "normal"
         for widget in (self.start_button, self.pick_button, self.folder_entry,
                        self.api_entry, self.api_save_button, self.api_delete_button,
-                       self.ai_checkbox):
+                       self.ai_checkbox, self.model_menu):
             widget.configure(state=state)
         self.stop_button.configure(state="normal" if running else "disabled")
 
@@ -175,6 +201,10 @@ class App(ctk.CTk):
         selected = filedialog.askdirectory(title="Vyber priečinok s fotkami z merania")
         if selected:
             self.folder_var.set(selected)
+
+    def _on_model_selected(self, label: str):
+        self.selected_model = MODEL_OPTIONS[label]
+        config.save_model(self.selected_model)
 
     def save_api_key(self):
         key = self.api_entry.get().strip()
@@ -249,7 +279,8 @@ class App(ctk.CTk):
         self.open_button.configure(state="disabled")
         self.progress.set(0)
         self._set_running(True)
-        self.log(f"Štart: {folder}" + ("  (AI kontrola zapnutá)" if use_api else "  (offline režim)"))
+        model_note = f"  (AI kontrola zapnutá — {_MODEL_ID_TO_LABEL.get(self.selected_model, self.selected_model)})"
+        self.log(f"Štart: {folder}" + (model_note if use_api else "  (offline režim)"))
 
         self.worker = threading.Thread(
             target=self._worker, args=(folder, install_action, use_api), daemon=True
@@ -348,7 +379,8 @@ class App(ctk.CTk):
             def progress(done, total, message):
                 self.queue.put(("progress", done, total, message))
 
-            result = pipeline.run_job(folder, use_ocr, use_api, progress, self.cancel_event)
+            result = pipeline.run_job(folder, use_ocr, use_api, progress, self.cancel_event,
+                                      model=self.selected_model)
             if result.get("cost_usd"):
                 result["lifetime_cost_usd"] = config.add_total_cost_usd(result["cost_usd"])
             self.queue.put(("done", result))

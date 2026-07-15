@@ -9,7 +9,7 @@ sa teraz zapina automaticky, ked je ulozeny API kluc (v okne programu).
 import argparse
 from pathlib import Path
 
-from . import gui
+from . import gui, installer
 
 
 def parse_args():
@@ -22,6 +22,9 @@ def parse_args():
 
 
 def main():
+    if installer.ensure_installed():
+        return  # nova kopia uz bezi z Dokumentov, tento proces sa ticho ukonci
+
     args = parse_args()
     folder = Path(args.folder) if args.folder else None
     gui.run(initial_folder=folder, auto_start=folder is not None)

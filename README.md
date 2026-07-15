@@ -8,16 +8,21 @@ a z prvej fotky (štítok meracieho prístroja) vytiahne **Seriennr.** a
 ## Inštalácia (pre bežného používateľa)
 
 1. Stiahni najnovší `FotoRotator.exe` zo sekcie [Releases](../../releases)
-2. Spusti `FotoRotator.exe` — otvorí sa **okno programu**: vyber priečinok
-   (zákazku alebo jedno meranie), prípadne vlož **Claude API kľúč** (voliteľné,
-   zapne AI kontrolu — kľúč sa uloží bezpečne a stačí ho zadať raz) a klikni
-   **Spustiť**. Okno ukazuje priebeh (ktorá fotka sa spracúva), živý log a na
-   konci výsledky s tlačidlom "Otvoriť výstupný priečinok".
-3. Tlačidlom **"Skryť do lišty"** (alebo klikom na bežné minimalizovanie okna)
+   a spusti ho (odkiaľkoľvek, napr. z priečinka Stiahnuté)
+2. Pri **prvom spustení** sa program sám presunie do `Dokumenty\FotoRotator`
+   a na Plochu si vytvorí odkaz **FotoRotator** (s vlastnou ikonou) — nabudúce
+   stačí spúšťať cez túto skratku. Pôvodný stiahnutý súbor môžeš pokojne
+   zmazať, netreba ho už.
+3. Otvorí sa **okno programu**: vyber priečinok (zákazku alebo jedno meranie),
+   prípadne vlož **Claude API kľúč** (voliteľné, zapne AI kontrolu — kľúč sa
+   uloží bezpečne a stačí ho zadať raz) a klikni **Spustiť**. Okno ukazuje
+   priebeh (ktorá fotka sa spracúva), živý log a na konci výsledky
+   s tlačidlom "Otvoriť výstupný priečinok".
+4. Tlačidlom **"Skryť do lišty"** (alebo klikom na bežné minimalizovanie okna)
    sa program schová do systémovej lišty vedľa hodín a spracovanie beží ďalej
    na pozadí — po dokončení príde upozornenie priamo z lišty. Klikom na
    ikonu sa okno vráti späť.
-4. Ak na počítači chýba **Tesseract OCR** (potrebný na rozpoznanie správneho
+5. Ak na počítači chýba **Tesseract OCR** (potrebný na rozpoznanie správneho
    smeru otočenia a čítanie štítku), program ho pri spustení **sám ponúkne
    stiahnuť a nainštalovať** — vždy aktuálnu verziu, automaticky aj
    s nemeckým jazykovým balíkom. Stačí potvrdiť a povoliť inštaláciu v okne
@@ -60,6 +65,27 @@ a klikni "Uložiť kľúč" — kľúč sa overí a uloží **zašifrovaný** (W
 viazaný na tvoj účet; nikam sa neposiela okrem priamych volaní na Claude API).
 Zadáva sa iba raz. S uloženým kľúčom sa automaticky zapne AI kontrola, ktorá
 zvládne to, čo lokálny OCR nie:
+
+**Kde a ako je kľúč uložený:** v súbore `%APPDATA%\FotoRotator\config.json`
+(typicky `C:\Users\<meno>\AppData\Roaming\FotoRotator\config.json`). Kľúč v
+tomto súbore **nie je čitateľný text** — je zašifrovaný cez Windows DPAPI
+naviazané na tvoj Windows účet na tomto konkrétnom počítači. Aj keby niekto
+otvoril súbor alebo si ho skopíroval, bez prihlásenia ako ty na tomto PC sa
+kľúč nedá rozšifrovať. Kľúč sa posiela výhradne priamo na `api.anthropic.com`
+pri AI kontrole — nikam inam.
+
+**Výber modelu:** v okne je rozbaľovací zoznam "Model AI kontroly" so 4
+možnosťami zoradenými od najlacnejšej po najdrahšiu, s poznámkou o cene
+(za milión tokenov, vstup/výstup) a orientačnou kvalitou:
+
+| Model | Cena | Poznámka |
+|---|---|---|
+| **Claude Haiku 4.5** (odporúčané, default) | $1 / $5 | najlacnejší, na túto úlohu overene postačuje |
+| Claude Sonnet 5 | $2 / $10 | kvalitnejší, cca 2× drahší |
+| Claude Opus 4.8 | $5 / $25 | najkvalitnejší bežne dostupný, cca 5× drahší |
+| Claude Fable 5 | $10 / $50 | najsilnejší vôbec, cca 10× drahší — na fotky zvyčajne zbytočne drahé |
+
+Voľba sa uloží a použije pri každom ďalšom behu.
 
 - **overí správnosť otočenia každej fotky** — fotka sa porovná so svojou 180°
   otočenou verziou a AI vyberie tú správnu; rieši to tmavé zábery displejov
