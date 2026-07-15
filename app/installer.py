@@ -6,15 +6,13 @@ skratku na plochu (ak chyba) a znovu sa spusti uz z tejto cesty - takto
 nezostava "nainstalovany" priamo v priecinku Stiahnute a skratka na ploche
 vzdy spusta aktualnu nainstalovanu verziu.
 
-Kluc k spolahlivej aktualizacii: cielovy .exe moze byt prave spusteny (stara
-verzia bezi na pozadi / v systemovej liste) - priame prepisanie (copy) vtedy
-zlyha, lebo Windows nedovoli zapisovat do suboru, ktory ma otvoreny bezuci
-proces. RIESENIE: bezuci .exe sa DA PREMENOVAT (bezuci proces si drzi svoj
-povodny subor cez handle nezavisle od jeho mena v priecinku), takze sa stara
-verzia odsunie nabok a na jej miesto sa skopiruje nova - dalsie spustenie
-skratky uz pouzije novy obsah, aj ked stara instancia medzicasom dobehne.
-Ak uz bezi presne z cielovej cesty (t.j. spusteny cez tuto skratku), nic sa
-neaktualizuje - len sa doplni skratka na plochu, ak by nahodou chybala.
+Ak je cielovy .exe prave spusteny (stara verzia bezi na pozadi / v
+systemovej liste), aktualizacia sa NEPREPISUJE poticho "pod rukou" - rovnako
+ako klasicke Windows instalatory najprv poziada pouzivatela, aby bezuci
+program zavrel (alebo ho zavrie sam na jeho ziadost), a az potom nainstaluje
+novu verziu. Ak uz bezi presne z cielovej cesty (t.j. spusteny cez tuto
+skratku), nic sa neaktualizuje - len sa doplni skratka na plochu, ak by
+nahodou chybala.
 """
 
 from __future__ import annotations
@@ -24,6 +22,7 @@ import hashlib
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 APP_EXE_NAME = "FotoRotator.exe"
@@ -78,51 +77,95 @@ def _files_identical(a: Path, b: Path) -> bool:
         return False
 
 
-def _replace_possibly_running_exe(target_path: Path, source_path: Path) -> bool:
-    """Nahradi obsah target_path obsahom source_path, aj ked je target_path
-    prave spusteny (zamknuty bezucim procesom). Skusi priamy zapis; ak
-    zlyha, subor najprv premenuje nabok (to Windows dovoli aj pri bezuci
-    .exe) a az potom skopiruje novy na jeho miesto. Pri zlyhani sa povodny
-    subor vrati spat, aby appka nikdy neostala bez funkcnej instalacie."""
+def _try_copy(target_path: Path, source_path: Path) -> bool:
     try:
         shutil.copy2(source_path, target_path)
         return True
     except OSError:
-        pass  # pravdepodobne zamknuty bezucim procesom - skusime premenovat
-
-    backup = target_path.with_name(target_path.name + ".old")
-    try:
-        if backup.exists():
-            backup.unlink()
-    except OSError:
-        pass  # predoslý needpratany zvysok - skusime prepisat nizsie aj tak
-
-    try:
-        target_path.rename(backup)
-    except OSError:
-        return False  # ani premenovanie nevyslo - vzdame to, appka zostava na starej verzii
-
-    try:
-        shutil.copy2(source_path, target_path)
-    except OSError:
-        try:
-            backup.rename(target_path)  # vratime povodny subor spat, nech appka ostane funkcna
-        except OSError:
-            pass
         return False
 
-    try:
-        backup.unlink()  # stary subor uz nepotrebujeme (ak sa medzicasom uvolnil)
-    except OSError:
-        pass  # stara bezuca instancia ho este drzi - zmaze sa niekedy pri buducej aktualizacii
 
-    return True
+def _close_running_instances(exe_path: Path):
+    """Ticho ukonci vsetky bezuce procesy spustene z presne tejto cesty
+    (typicky stara verzia FotoRotatora) - vola sa len na vyslovnu ziadost
+    pouzivatela (tlacidlo v dialogu), nikdy sama od seba."""
+    ps_script = (
+        f"Get-Process | Where-Object {{ $_.Path -eq '{_escape_ps(str(exe_path))}' }} "
+        "| Stop-Process -Force"
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_script],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            timeout=15,
+        )
+    except Exception:
+        pass
+
+
+def _ask_close_and_retry(target_exe: Path) -> bool:
+    """FotoRotator je prave spusteny a subor sa neda aktualizovat - zobrazi
+    okno s ziadostou, aby ho pouzivatel zavrel (bud sam, alebo tlacidlom
+    v tomto okne), s moznostou Skusit znova / Zrusit. Vrati True, ak sa ma
+    kopirovanie skusit znova, False ak pouzivatel zrusil aktualizaciu."""
+    import tkinter as tk
+    from tkinter import ttk
+
+    outcome = {"retry": False}
+
+    root = tk.Tk()
+    root.title("FotoRotator — aktualizácia")
+    root.resizable(False, False)
+    root.attributes("-topmost", True)
+    root.eval("tk::PlaceWindow . center")
+
+    frame = ttk.Frame(root, padding=20)
+    frame.pack(fill="both", expand=True)
+    ttk.Label(
+        frame,
+        text=(
+            "Je dostupná nová verzia programu, ale FotoRotator je momentálne "
+            "spustený (aj keby len v systémovej lište).\n\n"
+            "Pred inštaláciou aktualizácie ho treba zavrieť."
+        ),
+        wraplength=380, justify="left",
+    ).pack(pady=(0, 16))
+
+    def on_auto_close():
+        _close_running_instances(target_exe)
+        time.sleep(1)
+        outcome["retry"] = True
+        root.destroy()
+
+    def on_retry():
+        outcome["retry"] = True
+        root.destroy()
+
+    def on_cancel():
+        outcome["retry"] = False
+        root.destroy()
+
+    ttk.Button(
+        frame, text="Zavrieť FotoRotator a nainštalovať aktualizáciu", command=on_auto_close,
+    ).pack(fill="x", pady=(0, 8))
+
+    button_row = ttk.Frame(frame)
+    button_row.pack(fill="x")
+    ttk.Button(button_row, text="Už som ho zavrel — skúsiť znova", command=on_retry).pack(side="left")
+    ttk.Button(button_row, text="Zrušiť", command=on_cancel).pack(side="right")
+
+    root.protocol("WM_DELETE_WINDOW", on_cancel)
+    root.mainloop()
+
+    return outcome["retry"]
 
 
 def ensure_installed(documents_dir: Path | None = None, desktop_dir: Path | None = None) -> bool:
     """Ak bezi zabaleny .exe mimo cielovej cesty (Dokumenty\\FotoRotator),
-    zaisti, aby tam bola najnovsia verzia (aj ked tam uz nejaka je a prave
-    bezi), vytvori skratku na plochu (ak chyba) a znovu sa spusti odtial.
+    zaisti, aby tam bola najnovsia verzia, vytvori skratku na plochu (ak
+    chyba) a znovu sa spusti odtial. Ak je cielovy subor prave spusteny,
+    poziada pouzivatela o zatvorenie (viz _ask_close_and_retry) - nikdy ho
+    neprepisuje poticho "pod rukou".
 
     `documents_dir`/`desktop_dir` su len pre testy (aby sa dalo nasmerovat
     mimo skutocnej Plochy/Dokumentov pouzivatela) - za normalnej prevadzky
@@ -145,22 +188,15 @@ def ensure_installed(documents_dir: Path | None = None, desktop_dir: Path | None
     target_exe = target_dir / APP_EXE_NAME
     shortcut_path = desktop / SHORTCUT_NAME
 
-    # Prilezitostne upraceme zvysok z predoslej aktualizacie, ktory sa vtedy
-    # nedal zmazat (stara verzia ho este drzala) - skusa sa pri kazdom
-    # spusteni, nielen ked prave prebieha dalsia aktualizacia.
-    stale_backup = target_exe.with_name(target_exe.name + ".old")
-    try:
-        stale_backup.unlink()
-    except OSError:
-        pass
-
     already_at_target = str(current_exe).lower() == str(target_exe).lower()
 
     if not already_at_target:
         target_dir.mkdir(parents=True, exist_ok=True)
         needs_update = not target_exe.exists() or not _files_identical(target_exe, current_exe)
-        if needs_update and not _replace_possibly_running_exe(target_exe, current_exe):
-            return False  # aktualizacia sa nepodarila (napr. aj premenovanie zlyhalo) - pokracuj z aktualnej kopie
+        if needs_update:
+            while not _try_copy(target_exe, current_exe):
+                if not _ask_close_and_retry(target_exe):
+                    return False  # pouzivatel zrusil - pokracuj z aktualnej (nenainstalovanej) kopie
 
     if not shortcut_path.exists():
         try:

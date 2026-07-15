@@ -41,15 +41,14 @@ FotoRotator/
                            skopíruje/aktualizuje tam (porovnanie cez sha256 -
                            _files_identical), vytvorí skratku na Plochu (PowerShell +
                            WScript.Shell COM), znova sa spustí odtiaľ a pôvodný
-                           proces sa ukončí. KĽÚČOVÉ: cieľový .exe môže byť prave
-                           spustený (stará verzia beží na pozadí/v lište) - priamy
-                           zápis vtedy zlyhá, preto _replace_possibly_running_exe
-                           najprv PREMENUJE stary súbor nabok (.exe.old - to Windows
-                           dovolí aj pri bežiacom procese) a az potom skopíruje novy
-                           na jeho miesto; skratka tak vždy spustí najnovšiu verziu,
-                           aj ked stará instancia dobehne neskôr. Zvyškový .old (ak sa
-                           nedal hned zmazat, lebo ho stará instancia este drzala) sa
-                           potichu uprace pri buducom spusteni.
+                           proces sa ukončí. Ak je cieľový .exe prave spustený (stará
+                           verzia beží na pozadí/v lište), aktualizácia sa NEPRESADÍ
+                           poticho "pod rukou" (na výslovnú žiadosť používateľa,
+                           15.7.2026 večer) - _ask_close_and_retry zobrazí okno so
+                           žiadosťou o zatvorenie, s tlačidlami "Zavrieť FotoRotator
+                           a nainštalovať" (_close_running_instances cez PowerShell
+                           Stop-Process) / "Už som zavrel, skúsiť znova" / "Zrušiť".
+                           Klasický instalátorský postup, nie tichá zámena súboru.
     icon.py              — ikona programu kreslená cez Pillow (draw_icon/save_ico),
                            zdieľaná pre .ico (assets/icon.ico, --icon pri buildu),
                            okno (iconbitmap) aj tray ikonu
