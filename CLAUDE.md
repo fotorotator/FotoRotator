@@ -38,7 +38,9 @@ FotoRotator/
     main.py              — vstupný bod, spúšťa okno programu (gui.py)
     gui.py               — okno programu (customtkinter ako StrategyScribe):
                            výber priečinka, uloženie API kľúča, Spustiť/Zastaviť,
-                           progress bar, živý log, otvorenie výstupu
+                           progress bar, živý log, otvorenie výstupu, skrytie do
+                           systémovej lišty (pystray) — beh pokračuje na pozadí,
+                           po dokončení príde upozornenie z lišty
     pipeline.py          — samotné spracovanie (process_folder/run_job, progress
                            callback, cancel_event) — oddelené od GUI
     config.py            — config.json v %APPDATA%\FotoRotator, API kľúč šifrovaný

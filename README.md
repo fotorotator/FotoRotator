@@ -13,7 +13,11 @@ a z prvej fotky (štítok meracieho prístroja) vytiahne **Seriennr.** a
    zapne AI kontrolu — kľúč sa uloží bezpečne a stačí ho zadať raz) a klikni
    **Spustiť**. Okno ukazuje priebeh (ktorá fotka sa spracúva), živý log a na
    konci výsledky s tlačidlom "Otvoriť výstupný priečinok".
-3. Ak na počítači chýba **Tesseract OCR** (potrebný na rozpoznanie správneho
+3. Tlačidlom **"Skryť do lišty"** (alebo klikom na bežné minimalizovanie okna)
+   sa program schová do systémovej lišty vedľa hodín a spracovanie beží ďalej
+   na pozadí — po dokončení príde upozornenie priamo z lišty. Klikom na
+   ikonu sa okno vráti späť.
+4. Ak na počítači chýba **Tesseract OCR** (potrebný na rozpoznanie správneho
    smeru otočenia a čítanie štítku), program ho pri spustení **sám ponúkne
    stiahnuť a nainštalovať** — vždy aktuálnu verziu, automaticky aj
    s nemeckým jazykovým balíkom. Stačí potvrdiť a povoliť inštaláciu v okne

@@ -5,6 +5,8 @@
   automaticky zapina AI kontrola otocenia + citanie stavu elektromera
 - priebeh prace: progress bar, aktualna fotka, zivy log
 - na konci suhrn vysledkov a tlacidlo na otvorenie vystupneho priecinka
+- skrytie do systemovej listy (pystray) - spracovanie bezi dalej na pozadi,
+  po dokonceni prijde upozornenie priamo z listy
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
+import pystray
+from PIL import Image, ImageDraw
 
 from . import config, pipeline, rotate, tesseract_check, tesseract_install
 
@@ -23,6 +27,18 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 API_KEYS_URL = "https://console.anthropic.com/settings/keys"
+
+
+def _make_tray_image() -> Image.Image:
+    """Jednoducha ikona pre listu - modry stvorec s bielou sipkou otacania,
+    kreslena cez Pillow (ziadny externy subor)."""
+    size = 64
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle([3, 3, size - 3, size - 3], radius=14, fill=(30, 110, 220, 255))
+    draw.arc([15, 15, size - 15, size - 15], start=25, end=300, fill=(255, 255, 255, 255), width=6)
+    draw.polygon([(size - 17, 17), (size - 6, 24), (size - 21, 33)], fill=(255, 255, 255, 255))
+    return image
 
 
 class App(ctk.CTk):
@@ -90,6 +106,10 @@ class App(ctk.CTk):
                                          fg_color="#8B2E2E", hover_color="#742626",
                                          state="disabled", command=self.stop)
         self.stop_button.pack(side="left", padx=(8, 0))
+        self.tray_button = ctk.CTkButton(run_frame, text="Skryť do lišty", height=40, width=130,
+                                         fg_color="gray30", hover_color="gray25",
+                                         command=self.minimize_to_tray)
+        self.tray_button.pack(side="left", padx=(8, 0))
 
         # --- Priebeh ---
         self.progress = ctk.CTkProgressBar(self)
@@ -107,7 +127,9 @@ class App(ctk.CTk):
                                          state="disabled", command=self.open_output)
         self.open_button.pack(fill="x", padx=12, pady=(6, 12))
 
+        self.tray_icon = None
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.bind("<Unmap>", self._on_unmap)
         self.after(100, self._poll_queue)
 
         if auto_start and initial_folder:
@@ -235,10 +257,65 @@ class App(ctk.CTk):
 
     def on_close(self):
         if self.worker and self.worker.is_alive():
-            if not messagebox.askyesno("Ukončiť", "Spracovanie ešte beží — naozaj ukončiť program?"):
+            answer = messagebox.askyesnocancel(
+                "Spracovanie beží",
+                "Spracovanie ešte beží.\n\n"
+                "Áno = schovať do lišty (pokračuje na pozadí)\n"
+                "Nie = zastaviť spracovanie a ukončiť program\n"
+                "(Zrušiť = vrátiť sa do programu)",
+            )
+            if answer is None:
+                return
+            if answer:
+                self.minimize_to_tray()
                 return
             self.cancel_event.set()
+        self._stop_tray_icon()
         self.destroy()
+
+    # ---------- systemova lista ----------
+
+    def _on_unmap(self, event):
+        # Fici aj pri minimalizovani cez OS tlacidlo na titulnom pruhu, nielen
+        # cez nase tlacidlo "Skryt do listy".
+        if event.widget is self and self.state() == "iconic":
+            self.minimize_to_tray()
+
+    def minimize_to_tray(self):
+        if self.tray_icon is not None:
+            self.withdraw()
+            return
+        self.withdraw()
+        menu = pystray.Menu(
+            pystray.MenuItem("Otvoriť FotoRotator", self._tray_restore, default=True),
+            pystray.MenuItem("Ukončiť", self._tray_quit),
+        )
+        self.tray_icon = pystray.Icon("FotoRotator", _make_tray_image(), "FotoRotator", menu)
+        threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+    def _stop_tray_icon(self):
+        if self.tray_icon is not None:
+            try:
+                self.tray_icon.stop()
+            except Exception:
+                pass
+            self.tray_icon = None
+
+    def _tray_restore(self, icon=None, item=None):
+        # Bezi vo vlakne pystray - spat do Tk hlavneho vlakna posielame cez
+        # tu istu frontu, ktoru pouziva aj pracovne vlakno.
+        self.queue.put(("tray_restore",))
+
+    def _tray_quit(self, icon=None, item=None):
+        self.queue.put(("tray_quit",))
+
+    def _tray_notify(self, title: str, message: str):
+        if self.tray_icon is None:
+            return
+        try:
+            self.tray_icon.notify(message[:250], title)
+        except Exception:
+            pass  # nie vsetky Windows verzie/konfiguracie balonove upozornenia podporuju
 
     # ---------- vlakno spracovania ----------
 
@@ -295,13 +372,30 @@ class App(ctk.CTk):
                     self.log(result["summary"])
                     self.log(f"\nVýstup: {self.output_root}")
                     self.open_button.configure(state="normal")
-                    if not was_cancelled:
+                    if self.tray_icon is not None:
+                        self._tray_notify("FotoRotator — Hotovo", result["summary"])
+                    elif not was_cancelled:
                         messagebox.showinfo("Hotovo", f"{result['summary']}\n\nVýstup:\n{self.output_root}")
                 elif kind == "error":
                     self._set_running(False)
                     self.status_label.configure(text="Chyba.")
                     self.log(f"CHYBA: {item[1]}")
-                    messagebox.showerror("Chyba", item[1])
+                    if self.tray_icon is not None:
+                        self._tray_notify("FotoRotator — Chyba", item[1])
+                    else:
+                        messagebox.showerror("Chyba", item[1])
+                elif kind == "tray_restore":
+                    self._stop_tray_icon()
+                    self.deiconify()
+                    self.state("normal")
+                    self.lift()
+                    self.focus_force()
+                elif kind == "tray_quit":
+                    if self.worker and self.worker.is_alive():
+                        self.cancel_event.set()
+                    self._stop_tray_icon()
+                    self.destroy()
+                    return
                 elif kind == "api_key_ok":
                     key = item[1]
                     config.save_api_key(key)

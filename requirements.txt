@@ -3,4 +3,5 @@ pillow-heif>=0.13.0
 pytesseract>=0.3.10
 anthropic>=0.40.0
 customtkinter>=5.2.2
+pystray>=0.19.5
 pyinstaller>=6.11.0
