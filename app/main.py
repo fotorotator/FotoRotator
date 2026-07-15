@@ -146,8 +146,10 @@ def process_folder(photos_folder: Path, out_dir: Path, use_ocr: bool, use_claude
                     if result["rotate"]:
                         image = image.rotate(-result["rotate"], expand=True)
                         rotation_applied = (rotation_applied + result["rotate"]) % 360
-                        rotation_uncertain = False
                         api_note = f", otocenie opravene Claude API (+{result['rotate']})"
+                    # Uspesna API kontrola (A/B porovnanie) orientaciu overila -
+                    # lokalna neistota uz neplati, aj ked sa otocenie nemenilo.
+                    rotation_uncertain = False
                     if meter_reading is None and result["reading"]:
                         meter_reading = result["reading"]
                         meter_source_file = output_name
