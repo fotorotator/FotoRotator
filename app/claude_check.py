@@ -16,6 +16,7 @@ import base64
 import io
 import os
 import re
+import threading
 
 from PIL import Image
 
@@ -87,16 +88,33 @@ def _parse_reply(text: str) -> dict:
     return result
 
 
+_client_lock = threading.Lock()
+_client_cache: dict[str, object] = {}
+
+
+def _get_client(api_key: str):
+    """Jeden zdielany klient na kluc - je thread-safe, takze ho mozu naraz
+    pouzivat vsetky subezne fotky. max_retries=5: pri docasnom odmietnuti
+    (rate limit 429 / preplnenie 529) SDK pocka a skusi znova samo - taketo
+    odmietnute poziadavky sa NEUCTUJU."""
+    import anthropic
+
+    with _client_lock:
+        client = _client_cache.get(api_key)
+        if client is None:
+            client = anthropic.Anthropic(api_key=api_key, max_retries=5)
+            _client_cache[api_key] = client
+        return client
+
+
 def analyze_photo(image: Image.Image, model: str = DEFAULT_MODEL) -> dict:
     """Posle fotku na Claude API v dvoch orientaciach (A = ako je, B = +180
     stupnov) - porovnanie vedla seba je spolahlivejsie nez posudenie jednej
     fotky, najma pri elektromeroch s naopak nalepenymi nalepkami. Vrati dict:
     {"rotate": 0/180, "reading": str|None, "Seriennr": str|None,
      "Zaehlernr": str|None, "cost_usd": float|None}. Rotacia je relativna
-    k dodanej fotke. Vynimky necha prejst - volajuci ich osetri (API rezim
-    je volitelny)."""
-    import anthropic
-
+    k dodanej fotke. Je thread-safe - vola sa subezne pre viac fotiek naraz.
+    Vynimky necha prejst - volajuci ich osetri (API rezim je volitelny)."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("Premenna prostredia ANTHROPIC_API_KEY nie je nastavena.")
@@ -111,7 +129,7 @@ def analyze_photo(image: Image.Image, model: str = DEFAULT_MODEL) -> dict:
             },
         }
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = _get_client(api_key)
     message = client.messages.create(
         model=model,
         max_tokens=200,

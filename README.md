@@ -73,6 +73,19 @@ rotácie, čítanie štítku aj presnosť AI kontroly bežia vždy na plnom
 rozlíšení, kvalita výstupu sa nedotýka funkčnosti programu. Voľba sa
 zapamätá pre budúce behy.
 
+### Rýchlosť spracovania
+
+V okne si vyberieš, koľko fotiek sa spracúva naraz (1 / 2 / 4 / 8).
+Viac naraz = kratší čas behu; **cena AI kontroly sa nemení** (platí sa
+za fotky, nie za rýchlosť). Výstup je pri každej rýchlosti úplne rovnaký
+— poradie, číslovanie aj nájdené hodnoty (overené porovnaním výstupov
+bajt po bajte). Odporúčané: 4 naraz. Pri 8 môže API občas vrátiť
+„spomaľ" — program to sám zopakuje a takéto pokusy sa neúčtujú.
+
+Ak AI kontrola zlyhá (napr. vyčerpaný kredit na Claude účte alebo
+neplatný kľúč), výsledok to už **viditeľne oznámi** priamo v okne
+(„POZOR — AI kontrola zlyhala…") namiesto tichého zápisu do log.txt.
+
 ### AI kontrola (Claude API) — odporúčané
 
 V okne programu vlož **Claude API kľúč** (získaš na

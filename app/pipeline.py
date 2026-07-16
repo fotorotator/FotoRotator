@@ -8,6 +8,7 @@ Fotky z roznych priecinkov sa nemozu pomiesat.
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -48,6 +49,109 @@ def try_extract_ids(image, use_ocr: bool) -> dict:
     return id_extract.extract_ids_via_tesseract(image) if use_ocr else {key: None for key in id_extract.IDS}
 
 
+def _friendly_api_error(exc_text: str) -> str:
+    """Prelozi najcastejsie chyby Claude API do zrozumitelnej slovenciny -
+    zobrazuje sa priamo vo vysledku, nech chyba nezostane schovana v logu."""
+    if "credit balance is too low" in exc_text:
+        return ("na Claude účte nie je dostatočný kredit — dobi si ho na "
+                "console.anthropic.com (Plans & Billing)")
+    if "invalid x-api-key" in exc_text or "authentication_error" in exc_text:
+        return "API kľúč je neplatný — vlož v okne programu nový"
+    if "rate_limit" in exc_text or "overloaded" in exc_text:
+        return "API je dočasne preťažené — skús o chvíľu znova"
+    return exc_text[:120]
+
+
+def _process_one_photo(
+    index: int,
+    path: Path,
+    capture_time,
+    used_exif: bool,
+    out_dir: Path,
+    use_ocr: bool,
+    use_claude_api: bool,
+    model: str | None,
+    max_side: int | None,
+    quality: int,
+    cancel_event: threading.Event | None,
+    ids_complete_event: threading.Event,
+) -> dict:
+    """Kompletne spracuje JEDNU fotku (rotacia, volitelna AI kontrola,
+    ulozenie, lokalny OCR fallback na ID). Vracia slovnik s vysledkami -
+    agregacia (poradie logu, vyber ID podla najnizsieho indexu, sucty) sa
+    robi az v process_folder, takze funkcia moze bezat v lubovolnom poradi
+    aj subezne s inymi fotkami."""
+    output_name = rotate.output_name_for(index, path)
+    entry = {
+        "index": index, "output_name": output_name,
+        "skipped": False, "error": None, "api_error": None,
+        "log": None, "extra_log": [],
+        "uncertain": False, "cost": 0.0,
+        "ids": {}, "reading": None,
+    }
+
+    if cancel_event is not None and cancel_event.is_set():
+        entry["skipped"] = True
+        return entry
+
+    try:
+        processed = rotate.process_photo(path, use_ocr=use_ocr)
+        rotation_applied = processed.rotation_applied
+        rotation_uncertain = processed.rotation_uncertain
+        image = processed.image
+        api_note = ""
+
+        if use_claude_api:
+            from . import claude_check
+
+            try:
+                result = claude_check.analyze_photo(image, model=model or claude_check.DEFAULT_MODEL)
+                if result.get("cost_usd"):
+                    entry["cost"] = result["cost_usd"]
+                if result["rotate"]:
+                    image = image.rotate(-result["rotate"], expand=True)
+                    rotation_applied = (rotation_applied + result["rotate"]) % 360
+                    api_note = f", otocenie opravene Claude API (+{result['rotate']})"
+                # Uspesna API kontrola (A/B porovnanie) orientaciu overila -
+                # lokalna neistota uz neplati, aj ked sa otocenie nemenilo.
+                rotation_uncertain = False
+                entry["reading"] = result["reading"]
+                for key in id_extract.IDS:
+                    if result.get(key):
+                        entry["ids"][key] = result[key]
+            except Exception as exc:
+                entry["extra_log"].append(f"  Claude API zlyhalo pri fotke {output_name}: {exc}")
+                entry["api_error"] = _friendly_api_error(str(exc))
+
+        rotate.save_output(image, path, out_dir / output_name, max_side=max_side, quality=quality)
+
+        time_source = "EXIF" if used_exif else "datum zmeny suboru"
+        status = f"otocena o {rotation_applied} stupnov" if rotation_applied else "bez zmeny (uz vodorovna)"
+        if rotation_uncertain:
+            status += " - NEISTA ROTACIA, skontroluj rucne"
+            entry["uncertain"] = True
+        entry["log"] = f"{output_name}: cas={capture_time} ({time_source}), {status}{api_note}"
+
+        # Lokalny OCR fallback na Seriennr/Zaehlernr - len na prvych
+        # MAX_LABEL_ATTEMPTS fotkach a len kym ID nie su najdene (event
+        # nastavuje agregacia, aby ostatne fotky uz OCR necitali zbytocne).
+        if (
+            use_ocr
+            and index <= MAX_LABEL_ATTEMPTS
+            and len(entry["ids"]) < len(id_extract.IDS)
+            and not ids_complete_event.is_set()
+        ):
+            found = id_extract.extract_ids_via_tesseract(image)
+            for key in id_extract.IDS:
+                if key not in entry["ids"] and found.get(key):
+                    entry["ids"][key] = found[key]
+
+    except Exception as exc:
+        entry["error"] = f"{path.name}: CHYBA pri spracovani - {exc} (fotka preskocena)"
+
+    return entry
+
+
 def process_folder(
     photos_folder: Path,
     out_dir: Path,
@@ -58,11 +162,14 @@ def process_folder(
     model: str | None = None,
     max_side: int | None = None,
     quality: int = 95,
+    concurrency: int = 1,
 ) -> dict:
     """Spracuje JEDEN priecinok s fotkami do out_dir. `progress(done_in_folder,
-    total_in_folder, message)` sa vola po kazdej fotke. `max_side`/`quality`
-    riadia velkost/kvalitu ulozenych fotiek (viz rotate.save_output). Vrati
-    suhrn."""
+    total_in_folder, message)` sa vola po kazdej dokoncenej fotke.
+    `max_side`/`quality` riadia velkost/kvalitu ulozenych fotiek.
+    `concurrency` = kolko fotiek sa spracuva naraz (1 = postupne) - vystup
+    (cislovanie, poradie logu, vyber ID) je pri kazdej hodnote rovnaky,
+    subezne bezi len samotna praca. Vrati suhrn."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log_lines = []
@@ -77,66 +184,67 @@ def process_folder(
 
     sorted_photos = rotate.sort_photos(rotate.list_photos(photos_folder))
     total = len(sorted_photos)
+    ids_complete_event = threading.Event()
 
-    for index, (path, capture_time, used_exif) in enumerate(sorted_photos, start=1):
-        if cancel_event is not None and cancel_event.is_set():
-            log_lines.append("PRERUSENE POUZIVATELOM - zvysne fotky nespracovane")
-            break
-        output_name = rotate.output_name_for(index, path)
-        try:
-            processed = rotate.process_photo(path, use_ocr=use_ocr)
-            rotation_applied = processed.rotation_applied
-            rotation_uncertain = processed.rotation_uncertain
-            image = processed.image
-            api_note = ""
+    entries: dict[int, dict] = {}
+    workers = max(1, min(int(concurrency or 1), 8))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                _process_one_photo, index, path, capture_time, used_exif,
+                out_dir, use_ocr, use_claude_api, model, max_side, quality,
+                cancel_event, ids_complete_event,
+            ): index
+            for index, (path, capture_time, used_exif) in enumerate(sorted_photos, start=1)
+        }
+        done_count = 0
+        for future in as_completed(futures):
+            entry = future.result()
+            entries[entry["index"]] = entry
+            done_count += 1
+            # Ked su obe ID najdene (hocikde), dalsie fotky uz OCR na stitok
+            # nemusia skusat - len optimalizacia, na vysledok nema vplyv.
+            found_keys = set()
+            for e in entries.values():
+                found_keys.update(k for k, v in e["ids"].items() if v)
+            if len(found_keys) >= len(id_extract.IDS):
+                ids_complete_event.set()
+            if progress is not None and not entry["skipped"]:
+                progress(done_count, total, entry["output_name"])
 
-            if use_claude_api:
-                from . import claude_check
-
-                try:
-                    result = claude_check.analyze_photo(image, model=model or claude_check.DEFAULT_MODEL)
-                    if result.get("cost_usd"):
-                        cost_usd += result["cost_usd"]
-                    if result["rotate"]:
-                        image = image.rotate(-result["rotate"], expand=True)
-                        rotation_applied = (rotation_applied + result["rotate"]) % 360
-                        api_note = f", otocenie opravene Claude API (+{result['rotate']})"
-                    # Uspesna API kontrola (A/B porovnanie) orientaciu overila -
-                    # lokalna neistota uz neplati, aj ked sa otocenie nemenilo.
-                    rotation_uncertain = False
-                    if meter_reading is None and result["reading"]:
-                        meter_reading = result["reading"]
-                        meter_source_file = output_name
-                    for key in id_extract.IDS:
-                        if ids[key] is None and result.get(key):
-                            ids[key] = result[key]
-                            ids_source_file = output_name
-                except Exception as exc:
-                    log_lines.append(f"  Claude API zlyhalo pri fotke {output_name}: {exc}")
-
-            rotate.save_output(image, path, out_dir / output_name, max_side=max_side, quality=quality)
-            photo_count += 1
-
-            time_source = "EXIF" if used_exif else "datum zmeny suboru"
-            status = f"otocena o {rotation_applied} stupnov" if rotation_applied else "bez zmeny (uz vodorovna)"
-            if rotation_uncertain:
-                status += " - NEISTA ROTACIA, skontroluj rucne"
-                uncertain_count += 1
-            log_lines.append(f"{output_name}: cas={capture_time} ({time_source}), {status}{api_note}")
-
-            if any(ids[key] is None for key in id_extract.IDS) and index <= MAX_LABEL_ATTEMPTS:
-                found = try_extract_ids(image, use_ocr)
-                for key in id_extract.IDS:
-                    if ids[key] is None and found.get(key):
-                        ids[key] = found[key]
-                        ids_source_file = output_name
-
-        except Exception as exc:
+    # Agregacia v poradi fotiek (podla indexu) - log aj vyber ID/stavu su
+    # deterministicke bez ohladu na to, v akom poradi fotky dobehli.
+    cancelled = False
+    api_error_count = 0
+    api_error_reason = None
+    for index in sorted(entries):
+        entry = entries[index]
+        if entry["skipped"]:
+            cancelled = True
+            continue
+        if entry["error"]:
             error_count += 1
-            log_lines.append(f"{path.name}: CHYBA pri spracovani - {exc} (fotka preskocena)")
-
-        if progress is not None:
-            progress(index, total, output_name)
+            log_lines.append(entry["error"])
+            continue
+        log_lines.extend(entry["extra_log"])
+        log_lines.append(entry["log"])
+        photo_count += 1
+        cost_usd += entry["cost"]
+        if entry["api_error"]:
+            api_error_count += 1
+            if api_error_reason is None:
+                api_error_reason = entry["api_error"]
+        if entry["uncertain"]:
+            uncertain_count += 1
+        if meter_reading is None and entry["reading"]:
+            meter_reading = entry["reading"]
+            meter_source_file = entry["output_name"]
+        for key in id_extract.IDS:
+            if ids[key] is None and entry["ids"].get(key):
+                ids[key] = entry["ids"][key]
+                ids_source_file = entry["output_name"]
+    if cancelled:
+        log_lines.append("PRERUSENE POUZIVATELOM - zvysne fotky nespracovane")
 
     ids_lines = [f"{DISPLAY_LABELS[key]}: {ids[key] or 'NENAJDENE'}" for key in id_extract.IDS]
     if meter_reading is not None:
@@ -150,6 +258,10 @@ def process_folder(
         ids_lines.append("(nepodarilo sa najst ziadne z ID cisel na prvych fotkach)")
     if cost_usd:
         ids_lines.append(f"Cena AI kontroly: ${cost_usd:.4f}")
+    if api_error_count:
+        ids_lines.append(
+            f"POZOR — AI kontrola zlyhala pri {api_error_count} z {photo_count} fotiek: {api_error_reason}"
+        )
 
     (out_dir / "identifikacne_cisla.txt").write_text("\n".join(ids_lines), encoding="utf-8")
     (out_dir / "log.txt").write_text("\n".join(log_lines), encoding="utf-8")
@@ -172,6 +284,7 @@ def run_job(
     model: str | None = None,
     max_side: int | None = None,
     quality: int = 95,
+    concurrency: int = 1,
 ) -> dict:
     """Cely beh: najde priecinky s fotkami a kazdy spracuje samostatne.
     `progress(done_total, total_photos, message)` hlasi celkovy priebeh.
@@ -197,7 +310,7 @@ def run_job(
 
         info = process_folder(folder, output_root, use_ocr, use_claude_api,
                               folder_progress, cancel_event, model=model,
-                              max_side=max_side, quality=quality)
+                              max_side=max_side, quality=quality, concurrency=concurrency)
         total_cost_usd = info["cost_usd"]
         summary = "\n".join(info["ids_lines"])
         if info["uncertain_count"]:
@@ -217,7 +330,7 @@ def run_job(
 
             info = process_folder(photos_folder, out_sub, use_ocr, use_claude_api,
                                   folder_progress, cancel_event, model=model,
-                                  max_side=max_side, quality=quality)
+                                  max_side=max_side, quality=quality, concurrency=concurrency)
             done_before += totals[photos_folder]
             total_cost_usd += info["cost_usd"]
             overview_lines.append(f"[{label}]")

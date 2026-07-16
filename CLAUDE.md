@@ -69,8 +69,18 @@ FotoRotator/
                            fokuse okna, nech neostáva zastaraná pri viacerých bežiacich
                            kópiách)
     pipeline.py          — samotné spracovanie (process_folder/run_job, progress
-                           callback, cancel_event, model, max_side, quality) —
-                           oddelené od GUI
+                           callback, cancel_event, model, max_side, quality,
+                           concurrency) — oddelené od GUI. Od v0.5.0 sa fotky
+                           spracúvajú súbežne (ThreadPoolExecutor, GUI voľba
+                           SPEED_OPTIONS 1/2/4/8): _process_one_photo beží v
+                           worker vlákne, agregácia výsledkov je deterministická
+                           podľa indexu fotky (log poradie, výber ID podľa
+                           najnižšieho indexu) — výstup je identický pri každej
+                           rýchlosti (overené bajt-po-bajte na reálnych fotkách;
+                           offline 2× rýchlejšie, AI režim ~3×). Zlyhania Claude
+                           API sa počítajú a zobrazujú viditeľne vo výsledku
+                           (_friendly_api_error — vyčerpaný kredit/neplatný
+                           kľúč/preťaženie po slovensky), nie len v log.txt
     config.py            — config.json v %APPDATA%\FotoRotator: API kľúč šifrovaný
                            DPAPI cez ctypes (bez pywin32), total_cost_usd, model,
                            quality. POZOR pri testovaní: pracuje s REÁLNYM súborom,

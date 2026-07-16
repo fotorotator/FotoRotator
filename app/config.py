@@ -78,10 +78,14 @@ def _write_raw(config: dict):
 
 
 def load() -> dict:
-    config = {"api_key": "", "total_cost_usd": 0.0, "model": "", "quality": ""}
+    config = {"api_key": "", "total_cost_usd": 0.0, "model": "", "quality": "", "concurrency": 0}
     config.update(_read_raw())
     config["api_key"] = _unprotect(config.get("api_key", ""))
     config["total_cost_usd"] = float(config.get("total_cost_usd", 0.0))
+    try:
+        config["concurrency"] = int(config.get("concurrency", 0))
+    except (TypeError, ValueError):
+        config["concurrency"] = 0
     return config
 
 
@@ -100,6 +104,12 @@ def save_model(model_id: str):
 def save_quality(quality_key: str):
     config = _read_raw()
     config["quality"] = quality_key
+    _write_raw(config)
+
+
+def save_concurrency(concurrency: int):
+    config = _read_raw()
+    config["concurrency"] = int(concurrency)
     _write_raw(config)
 
 

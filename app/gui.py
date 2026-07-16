@@ -28,7 +28,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 API_KEYS_URL = "https://console.anthropic.com/settings/keys"
-APP_VERSION = "0.4.7"
+APP_VERSION = "0.5.0"
 
 # Ponuka modelov pre AI kontrolu - poznamka pri kazdom hovori o cene/kvalite
 # (ceny za milion tokenov vstup/vystup, k 7/2026). Haiku 4.5 je default -
@@ -51,6 +51,20 @@ QUALITY_PRESETS = {
     "Nízka — najmenšie súbory, stále čitateľné": {"key": "nizka", "max_side": 1280, "quality": 75},
 }
 _QUALITY_KEY_TO_LABEL = {v["key"]: k for k, v in QUALITY_PRESETS.items()}
+
+# Rychlost spracovania = kolko fotiek sa spracuva naraz. Cena AI kontroly sa
+# NEMENI (plati sa za fotky, nie za rychlost) - meni sa len cas behu.
+# 4 je bezpecny default: vyrazne zrychlenie a bez rizika narazenia na limity
+# API ci pamat; 8 moze pri velkych fotkach a slabsom PC/uctu API narazat na
+# docasne "spomal" odpovede (SDK ich automaticky opakuje, neuctuju sa).
+SPEED_OPTIONS = {
+    "Postupne — 1 fotka naraz (pôvodné tempo)": 1,
+    "Stredne — 2 fotky naraz": 2,
+    "Rýchlo — 4 fotky naraz (odporúčané)": 4,
+    "Turbo — 8 fotiek naraz (najrýchlejšie)": 8,
+}
+_SPEED_VALUE_TO_LABEL = {v: k for k, v in SPEED_OPTIONS.items()}
+DEFAULT_CONCURRENCY = 4
 
 # Riadok vysledku v tvare "Popis: hodnota" (Seriennr, Zählernr, Stav
 # elektromera (1.8.0), Cena AI kontroly, ...) - takyto riadok dostane v okne
@@ -93,6 +107,9 @@ class App(ctk.CTk):
         self.total_cost_usd = saved_config["total_cost_usd"]
         self.selected_model = saved_config["model"] or claude_check.DEFAULT_MODEL
         self.selected_quality = saved_config["quality"] or "original"
+        self.selected_concurrency = saved_config["concurrency"] or DEFAULT_CONCURRENCY
+        if self.selected_concurrency not in _SPEED_VALUE_TO_LABEL:
+            self.selected_concurrency = DEFAULT_CONCURRENCY
 
         pad = {"padx": 12, "pady": (6, 0)}
 
@@ -117,6 +134,20 @@ class App(ctk.CTk):
         )
         self.quality_menu.set(_QUALITY_KEY_TO_LABEL.get(self.selected_quality, next(iter(QUALITY_PRESETS))))
         self.quality_menu.pack(side="left", padx=(0, 12), pady=10)
+
+        # --- Rychlost spracovania ---
+        speed_frame = ctk.CTkFrame(self)
+        speed_frame.pack(fill="x", **pad)
+        ctk.CTkLabel(speed_frame, text="Rýchlosť spracovania:").pack(side="left", padx=(12, 8), pady=10)
+        self.speed_menu = ctk.CTkOptionMenu(
+            speed_frame, values=list(SPEED_OPTIONS.keys()), width=420,
+            command=self._on_speed_selected,
+        )
+        self.speed_menu.set(_SPEED_VALUE_TO_LABEL[self.selected_concurrency])
+        self.speed_menu.pack(side="left", padx=(0, 8), pady=10)
+        ctk.CTkLabel(
+            speed_frame, text="cena sa nemení, len čas", text_color="gray70",
+        ).pack(side="left", pady=10)
 
         # --- API kluc ---
         api_frame = ctk.CTkFrame(self)
@@ -237,7 +268,8 @@ class App(ctk.CTk):
         state = "disabled" if running else "normal"
         for widget in (self.start_button, self.pick_button, self.folder_entry,
                        self.api_entry, self.api_save_button, self.api_delete_button,
-                       self.ai_checkbox, self.model_menu, self.quality_menu):
+                       self.ai_checkbox, self.model_menu, self.quality_menu,
+                       self.speed_menu):
             widget.configure(state=state)
         self.stop_button.configure(state="normal" if running else "disabled")
 
@@ -255,6 +287,10 @@ class App(ctk.CTk):
     def _on_quality_selected(self, label: str):
         self.selected_quality = QUALITY_PRESETS[label]["key"]
         config.save_quality(self.selected_quality)
+
+    def _on_speed_selected(self, label: str):
+        self.selected_concurrency = SPEED_OPTIONS[label]
+        config.save_concurrency(self.selected_concurrency)
 
     def save_api_key(self):
         key = self.api_entry.get().strip()
@@ -332,7 +368,8 @@ class App(ctk.CTk):
         self._set_running(True)
         model_note = f"  (AI kontrola zapnutá — {_MODEL_ID_TO_LABEL.get(self.selected_model, self.selected_model)})"
         quality_note = f", kvalita fotiek: {_QUALITY_KEY_TO_LABEL.get(self.selected_quality, self.selected_quality)}"
-        self.log(f"Štart: {folder}" + (model_note if use_api else "  (offline režim)") + quality_note)
+        speed_note = f", rýchlosť: {self.selected_concurrency} naraz"
+        self.log(f"Štart: {folder}" + (model_note if use_api else "  (offline režim)") + quality_note + speed_note)
 
         self.worker = threading.Thread(
             target=self._worker, args=(folder, install_action, use_api), daemon=True
@@ -499,7 +536,8 @@ class App(ctk.CTk):
             quality_preset = QUALITY_PRESETS[_QUALITY_KEY_TO_LABEL[self.selected_quality]]
             result = pipeline.run_job(folder, use_ocr, use_api, progress, self.cancel_event,
                                       model=self.selected_model,
-                                      max_side=quality_preset["max_side"], quality=quality_preset["quality"])
+                                      max_side=quality_preset["max_side"], quality=quality_preset["quality"],
+                                      concurrency=self.selected_concurrency)
             if result.get("cost_usd"):
                 result["lifetime_cost_usd"] = config.add_total_cost_usd(result["cost_usd"])
             self.queue.put(("done", result))
